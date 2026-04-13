@@ -9,7 +9,7 @@
   <section class="faction-status-list">
     {{#if groups.length}}
       {{#each groups as |group groupIndex|}}
-        <section class="faction-group-card" {{#if ../permissions.canManageStructure}}draggable="true"{{/if}} data-group-index="{{groupIndex}}">
+        <section class="faction-group-card{{#if group.collapsed}} is-collapsed{{/if}}" {{#if ../permissions.canManageStructure}}draggable="true"{{/if}} data-group-id="{{group.id}}" data-group-index="{{groupIndex}}">
           <div class="faction-group-header">
             <div class="faction-group-main">
               {{#if ../permissions.canManageStructure}}
@@ -18,10 +18,11 @@
               <button
                 type="button"
                 class="faction-group-toggle"
+                data-group-id="{{group.id}}"
                 data-group-index="{{groupIndex}}"
                 aria-label="{{../labels.toggleGroupAria}}"
                 title="{{../labels.toggleGroupAria}}"
-                aria-expanded="true"
+                aria-expanded="{{#if group.collapsed}}false{{else}}true{{/if}}"
               >
                 <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
               </button>

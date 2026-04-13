@@ -4,6 +4,7 @@ const DEFAULT_FACTION_NAME = "New Faction";
 const DEFAULT_GROUP_NAME = "New group";
 const DEBUG_SETTING_KEY = "debugLogging";
 const PLAYER_VISIBILITY_SETTING_KEY = "visibleToPlayers";
+const GROUP_UI_STATE_FLAG = "groupUiState";
 let _dragState = null;
 const _latestRenderByApp = new WeakMap();
 
@@ -108,9 +109,39 @@ export async function setFactionGroups(actor, groups) {
 
   await actor.setFlag(MODULE_ID, "groups", sanitized);
 
+  const groupIds = new Set(sanitized.map((group) => group.id));
+  const existingUiState = getGroupUiState(actor);
+  const prunedUiState = Object.fromEntries(
+    Object.entries(existingUiState).filter(([groupId]) => groupIds.has(groupId))
+  );
+
+  if (!foundry.utils.isEmpty(prunedUiState) || !foundry.utils.isEmpty(existingUiState)) {
+    await actor.setFlag(MODULE_ID, GROUP_UI_STATE_FLAG, prunedUiState);
+  }
+
   if (actor.getFlag(MODULE_ID, "factions") !== undefined) {
     await actor.unsetFlag(MODULE_ID, "factions");
   }
+}
+
+function getGroupUiState(actor) {
+  const uiState = actor.getFlag(MODULE_ID, GROUP_UI_STATE_FLAG);
+  return foundry.utils.isObject(uiState) ? uiState : {};
+}
+
+async function setGroupCollapsedState(actor, groupId, collapsed) {
+  if (!groupId) return;
+  const uiState = getGroupUiState(actor);
+  uiState[groupId] = { collapsed: collapsed === true };
+  await actor.setFlag(MODULE_ID, GROUP_UI_STATE_FLAG, uiState);
+}
+
+function applyGroupUiState(groups, actor) {
+  const uiState = getGroupUiState(actor);
+  return groups.map((group) => ({
+    ...group,
+    collapsed: uiState[group.id]?.collapsed === true
+  }));
 }
 
 export function createUniqueFactionName(existingNames, baseName = DEFAULT_FACTION_NAME) {
@@ -241,7 +272,7 @@ async function onRenderActorSheet(app, html) {
 
   const { nav, tabContainer, navGroup } = context;
 
-  const groups = getFactionGroups(actor);
+  const groups = applyGroupUiState(getFactionGroups(actor), actor);
   const editable = isSheetEditable(app, html);
   const permissions = {
     canManageStructure: canManageStructure(actor) && editable,
@@ -377,7 +408,7 @@ function bindFactionStatusListeners(app, html, actor) {
   });
 
   html.off("click", `${selectorRoot} .faction-group-header`);
-  html.on("click", `${selectorRoot} .faction-group-header`, (event) => {
+  html.on("click", `${selectorRoot} .faction-group-header`, async (event) => {
     const interactiveTarget = event.target.closest("input, button, a, select, textarea");
     if (interactiveTarget && !interactiveTarget.classList.contains("faction-group-toggle")) return;
 
@@ -388,6 +419,8 @@ function bindFactionStatusListeners(app, html, actor) {
     const isCollapsed = card.classList.toggle("is-collapsed");
     const toggleButton = card.querySelector(".faction-group-toggle");
     if (toggleButton) toggleButton.setAttribute("aria-expanded", String(!isCollapsed));
+
+    await setGroupCollapsedState(actor, card.dataset.groupId, isCollapsed);
   });
 
   html.off("change", `${selectorRoot} .faction-group-name`);
