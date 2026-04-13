@@ -161,6 +161,15 @@ a[data-tab="faction-status"] i {
   justify-content: center;
 }
 
+.faction-status-tab button:disabled,
+.faction-status-tab input:disabled {
+  opacity: 0.65;
+}
+
+.faction-status-tab button:disabled {
+  cursor: not-allowed;
+}
+
 .faction-status-delete,
 .faction-group-delete {
   color: var(--color-text-light-6, #b7b7b7);

@@ -1,9 +1,7 @@
 <div class="tab faction-status-tab" data-group="{{tabGroup}}" data-tab="faction-status">
   <section class="faction-status-header">
     <h3>{{labels.header}}</h3>
-    {{#if permissions.canManageStructure}}
-      <button type="button" class="faction-group-add-global">{{labels.addGroup}}</button>
-    {{/if}}
+    <button type="button" class="faction-group-add-global" {{#unless permissions.canManageStructure}}disabled{{/unless}}>{{labels.addGroup}}</button>
   </section>
 
   <section class="faction-status-list">
@@ -35,46 +33,48 @@
 
             <div class="faction-group-actions">
               <span class="faction-count-badge" title="{{../labels.factionCountLabel}}">{{group.factions.length}}</span>
-              {{#if ../permissions.canManageStructure}}
-                <button
-                  type="button"
-                  class="faction-group-move icon-button"
-                  data-group-index="{{groupIndex}}"
-                  data-direction="up"
-                  aria-label="{{../labels.moveGroupUpAria}}"
-                  title="{{../labels.moveGroupUpAria}}"
-                >
-                  <i class="fa-solid fa-arrow-up" aria-hidden="true"></i>
-                </button>
-                <button
-                  type="button"
-                  class="faction-group-move icon-button"
-                  data-group-index="{{groupIndex}}"
-                  data-direction="down"
-                  aria-label="{{../labels.moveGroupDownAria}}"
-                  title="{{../labels.moveGroupDownAria}}"
-                >
-                  <i class="fa-solid fa-arrow-down" aria-hidden="true"></i>
-                </button>
-                <button
-                  type="button"
-                  class="faction-status-add icon-button"
-                  data-group-index="{{groupIndex}}"
-                  aria-label="{{../labels.addFactionAria}}"
-                  title="{{../labels.addFactionAria}}"
-                >
-                  <i class="fa-solid fa-plus" aria-hidden="true"></i>
-                </button>
-                <button
-                  type="button"
-                  class="faction-group-delete icon-button"
-                  data-group-index="{{groupIndex}}"
-                  aria-label="{{../labels.deleteGroupAria}}"
-                  title="{{../labels.deleteGroupAria}}"
-                >
-                  <i class="fa-solid fa-trash" aria-hidden="true"></i>
-                </button>
-              {{/if}}
+              <button
+                type="button"
+                class="faction-group-move icon-button"
+                data-group-index="{{groupIndex}}"
+                data-direction="up"
+                aria-label="{{../labels.moveGroupUpAria}}"
+                title="{{../labels.moveGroupUpAria}}"
+                {{#unless ../permissions.canManageStructure}}disabled{{/unless}}
+              >
+                <i class="fa-solid fa-arrow-up" aria-hidden="true"></i>
+              </button>
+              <button
+                type="button"
+                class="faction-group-move icon-button"
+                data-group-index="{{groupIndex}}"
+                data-direction="down"
+                aria-label="{{../labels.moveGroupDownAria}}"
+                title="{{../labels.moveGroupDownAria}}"
+                {{#unless ../permissions.canManageStructure}}disabled{{/unless}}
+              >
+                <i class="fa-solid fa-arrow-down" aria-hidden="true"></i>
+              </button>
+              <button
+                type="button"
+                class="faction-status-add icon-button"
+                data-group-index="{{groupIndex}}"
+                aria-label="{{../labels.addFactionAria}}"
+                title="{{../labels.addFactionAria}}"
+                {{#unless ../permissions.canManageStructure}}disabled{{/unless}}
+              >
+                <i class="fa-solid fa-plus" aria-hidden="true"></i>
+              </button>
+              <button
+                type="button"
+                class="faction-group-delete icon-button"
+                data-group-index="{{groupIndex}}"
+                aria-label="{{../labels.deleteGroupAria}}"
+                title="{{../labels.deleteGroupAria}}"
+                {{#unless ../permissions.canManageStructure}}disabled{{/unless}}
+              >
+                <i class="fa-solid fa-trash" aria-hidden="true"></i>
+              </button>
             </div>
           </div>
 
@@ -136,44 +136,43 @@
                     </button>
                   </div>
 
-                  {{#if ../../permissions.canManageStructure}}
-                    <div class="faction-status-actions">
-                      <button
-                        type="button"
-                        class="faction-status-move icon-button"
-                        data-group-index="{{groupIndex}}"
-                        data-faction-index="{{factionIndex}}"
-                        data-direction="up"
-                        aria-label="{{../../labels.moveFactionUpAria}}"
-                        title="{{../../labels.moveFactionUpAria}}"
-                      >
-                        <i class="fa-solid fa-arrow-up" aria-hidden="true"></i>
-                      </button>
-                      <button
-                        type="button"
-                        class="faction-status-move icon-button"
-                        data-group-index="{{groupIndex}}"
-                        data-faction-index="{{factionIndex}}"
-                        data-direction="down"
-                        aria-label="{{../../labels.moveFactionDownAria}}"
-                        title="{{../../labels.moveFactionDownAria}}"
-                      >
-                        <i class="fa-solid fa-arrow-down" aria-hidden="true"></i>
-                      </button>
-                      <button
-                        type="button"
-                        class="faction-status-delete icon-button"
-                        data-group-index="{{groupIndex}}"
-                        data-faction-index="{{factionIndex}}"
-                        aria-label="{{../../labels.deleteFactionAria}}"
-                        title="{{../../labels.deleteFactionAria}}"
-                      >
-                        <i class="fa-solid fa-trash" aria-hidden="true"></i>
-                      </button>
-                    </div>
-                  {{else}}
-                    <span></span>
-                  {{/if}}
+                  <div class="faction-status-actions">
+                    <button
+                      type="button"
+                      class="faction-status-move icon-button"
+                      data-group-index="{{groupIndex}}"
+                      data-faction-index="{{factionIndex}}"
+                      data-direction="up"
+                      aria-label="{{../../labels.moveFactionUpAria}}"
+                      title="{{../../labels.moveFactionUpAria}}"
+                      {{#unless ../../permissions.canManageStructure}}disabled{{/unless}}
+                    >
+                      <i class="fa-solid fa-arrow-up" aria-hidden="true"></i>
+                    </button>
+                    <button
+                      type="button"
+                      class="faction-status-move icon-button"
+                      data-group-index="{{groupIndex}}"
+                      data-faction-index="{{factionIndex}}"
+                      data-direction="down"
+                      aria-label="{{../../labels.moveFactionDownAria}}"
+                      title="{{../../labels.moveFactionDownAria}}"
+                      {{#unless ../../permissions.canManageStructure}}disabled{{/unless}}
+                    >
+                      <i class="fa-solid fa-arrow-down" aria-hidden="true"></i>
+                    </button>
+                    <button
+                      type="button"
+                      class="faction-status-delete icon-button"
+                      data-group-index="{{groupIndex}}"
+                      data-faction-index="{{factionIndex}}"
+                      aria-label="{{../../labels.deleteFactionAria}}"
+                      title="{{../../labels.deleteFactionAria}}"
+                      {{#unless ../../permissions.canManageStructure}}disabled{{/unless}}
+                    >
+                      <i class="fa-solid fa-trash" aria-hidden="true"></i>
+                    </button>
+                  </div>
                 </div>
               {{/each}}
               </div>
