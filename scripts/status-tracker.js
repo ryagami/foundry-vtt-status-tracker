@@ -8,6 +8,7 @@ const GROUP_UI_STATE_FLAG = "groupUiState";
 let _dragState = null;
 const _latestRenderByApp = new WeakMap();
 const _actorMutationQueues = new Map();
+const _preferredTabByApp = new WeakMap();
 
 export function initFactionStatusTracker() {
   game.settings.register(MODULE_ID, DEBUG_SETTING_KEY, {
@@ -49,11 +50,10 @@ function isPlainObject(value) {
 }
 
 function enqueueActorMutation(actorId, fn) {
-  const tail = (_actorMutationQueues.get(actorId) ?? Promise.resolve())
-    .then(fn)
-    .catch((err) => console.error(`${MODULE_ID} | Actor mutation failed for ${actorId}`, err));
-  _actorMutationQueues.set(actorId, tail);
-  return tail;
+  const currentTail = _actorMutationQueues.get(actorId) ?? Promise.resolve();
+  const nextTail = currentTail.then(fn);
+  _actorMutationQueues.set(actorId, nextTail.catch(() => {}));
+  return nextTail;
 }
 
 function createUniqueName(existingNames, baseName) {
@@ -256,6 +256,8 @@ function resolveSheetTabContext(html) {
   for (const element of navCandidates) {
     const nav = html.find(element);
     if (!nav.length) continue;
+    const tabLinks = nav.find("[data-tab]");
+    if (tabLinks.length < 2) continue;
     if (nav.find(`[data-tab='${TAB_KEY}']`).length) {
       debugLog("Tab already present in navigation", {
         strategy: "dom-nav-scan"
@@ -264,7 +266,9 @@ function resolveSheetTabContext(html) {
     }
 
     const navGroup = nav.data("group") || nav.find("[data-group]").first().data("group") || "primary";
-    const existingTab = html.find(`.tab[data-group='${navGroup}']`).first();
+    const groupTabs = html.find(`.tab[data-group='${navGroup}']`);
+    if (groupTabs.length < 2) continue;
+    const existingTab = groupTabs.first();
     const tabContainer = existingTab.parent();
 
     if (tabContainer.length) {
@@ -328,6 +332,8 @@ async function onRenderActorSheet(app, html) {
     }
 
     const { nav, tabContainer, navGroup } = context;
+    const currentlyActiveTab = html.find(`nav[data-group='${navGroup}'] [data-tab].active`).first().data("tab");
+    const preferredTab = _preferredTabByApp.get(app) || currentlyActiveTab || TAB_KEY;
 
     const groups = applyGroupUiState(getFactionGroups(actor), actor);
     const editable = isSheetInEditMode(app, html);
@@ -378,18 +384,19 @@ async function onRenderActorSheet(app, html) {
       groups: groups.length
     });
 
-    initializeTabSwitching(html, navGroup);
+    initializeTabSwitching(html, navGroup, preferredTab);
+    bindTabPreferenceTracking(app, html, navGroup);
     bindFactionStatusListeners(app, html, actor);
   } catch (error) {
     console.error(`${MODULE_ID} | Failed to render faction status tab`, error);
   }
 }
 
-function initializeTabSwitching(html, navGroup) {
+function initializeTabSwitching(html, navGroup, preferredTab = TAB_KEY) {
   // Use Foundry's public Tabs class to manage tab switching for our injected tab
   try {
-    const activeNavItem = html.find(`nav[data-group="${navGroup}"] .item.active, nav[data-group="${navGroup}"] a.active`).first();
-    const initialTab = activeNavItem.length ? (activeNavItem.data("tab") || TAB_KEY) : TAB_KEY;
+    const hasPreferred = html.find(`nav[data-group="${navGroup}"] [data-tab="${preferredTab}"]`).length > 0;
+    const initialTab = hasPreferred ? preferredTab : TAB_KEY;
     const tabs = new foundry.applications.ux.Tabs({
       navSelector: `nav[data-group="${navGroup}"]`,
       contentSelector: `.sheet-body, section.sheet-body, .tab-body, [class*="sheet-content"]`,
@@ -417,6 +424,16 @@ function initializeTabSwitching(html, navGroup) {
   }
 }
 
+function bindTabPreferenceTracking(app, html, navGroup) {
+  const navSelector = `nav[data-group='${navGroup}'] [data-tab]`;
+  html.off("click", navSelector);
+  html.on("click", navSelector, (event) => {
+    const clickedTab = event.currentTarget.dataset.tab;
+    if (!clickedTab) return;
+    _preferredTabByApp.set(app, clickedTab);
+  });
+}
+
 function bindFactionStatusListeners(app, html, actor) {
   const selectorRoot = `.tab[data-tab='${TAB_KEY}']`;
   const canManage = () => canManageStructure(actor) && isSheetInEditMode(app, html);
@@ -427,23 +444,29 @@ function bindFactionStatusListeners(app, html, actor) {
     event.preventDefault();
     if (!canManage()) return;
 
-    await enqueueActorMutation(actor.id, async () => {
-      const groups = getFactionGroups(actor);
-      mergePendingNames(html, groups);
-      const newGroupName = createUniqueGroupName(groups.map((group) => group.name), DEFAULT_GROUP_NAME);
-      groups.push({
-        id: foundry.utils.randomID(),
-        name: newGroupName,
-        factions: []
+    try {
+      await enqueueActorMutation(actor.id, async () => {
+        const groups = getFactionGroups(actor);
+        mergePendingNames(html, groups);
+        const newGroupName = createUniqueGroupName(groups.map((group) => group.name), DEFAULT_GROUP_NAME);
+        groups.push({
+          id: foundry.utils.randomID(),
+          name: newGroupName,
+          factions: []
+        });
+        await setFactionGroups(actor, groups);
+        debugLog("Added group", {
+          actorId: actor.id,
+          actorName: actor.name,
+          addedGroup: newGroupName,
+          totalGroups: groups.length
+        });
       });
-      await setFactionGroups(actor, groups);
-      debugLog("Added group", {
-        actorId: actor.id,
-        actorName: actor.name,
-        addedGroup: newGroupName,
-        totalGroups: groups.length
-      });
-    });
+    } catch (error) {
+      console.error(`${MODULE_ID} | Failed adding group`, error);
+      return;
+    }
+    _preferredTabByApp.set(app, TAB_KEY);
     app.render(true);
   });
 
@@ -455,19 +478,25 @@ function bindFactionStatusListeners(app, html, actor) {
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     if (Number.isNaN(groupIndex)) return;
 
-    await enqueueActorMutation(actor.id, async () => {
-      const groups = getFactionGroups(actor);
-      mergePendingNames(html, groups);
-      if (groupIndex < 0 || groupIndex >= groups.length) return;
-      groups.splice(groupIndex, 1);
-      await setFactionGroups(actor, groups);
-      debugLog("Deleted group", {
-        actorId: actor.id,
-        actorName: actor.name,
-        groupIndex,
-        remainingGroups: groups.length
+    try {
+      await enqueueActorMutation(actor.id, async () => {
+        const groups = getFactionGroups(actor);
+        mergePendingNames(html, groups);
+        if (groupIndex < 0 || groupIndex >= groups.length) return;
+        groups.splice(groupIndex, 1);
+        await setFactionGroups(actor, groups);
+        debugLog("Deleted group", {
+          actorId: actor.id,
+          actorName: actor.name,
+          groupIndex,
+          remainingGroups: groups.length
+        });
       });
-    });
+    } catch (error) {
+      console.error(`${MODULE_ID} | Failed deleting group`, error);
+      return;
+    }
+    _preferredTabByApp.set(app, TAB_KEY);
     app.render(true);
   });
 
@@ -517,26 +546,32 @@ function bindFactionStatusListeners(app, html, actor) {
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     if (Number.isNaN(groupIndex)) return;
 
-    await enqueueActorMutation(actor.id, async () => {
-      const groups = getFactionGroups(actor);
-      mergePendingNames(html, groups);
-      if (groupIndex < 0 || groupIndex >= groups.length) return;
-      const factions = groups[groupIndex].factions;
-      const newName = createUniqueFactionName(factions.map((faction) => faction.name), DEFAULT_FACTION_NAME);
-      factions.push({
-        id: foundry.utils.randomID(),
-        name: newName,
-        value: 0
+    try {
+      await enqueueActorMutation(actor.id, async () => {
+        const groups = getFactionGroups(actor);
+        mergePendingNames(html, groups);
+        if (groupIndex < 0 || groupIndex >= groups.length) return;
+        const factions = groups[groupIndex].factions;
+        const newName = createUniqueFactionName(factions.map((faction) => faction.name), DEFAULT_FACTION_NAME);
+        factions.push({
+          id: foundry.utils.randomID(),
+          name: newName,
+          value: 0
+        });
+        await setFactionGroups(actor, groups);
+        debugLog("Added faction entry", {
+          actorId: actor.id,
+          actorName: actor.name,
+          groupIndex,
+          addedName: newName,
+          totalFactions: factions.length
+        });
       });
-      await setFactionGroups(actor, groups);
-      debugLog("Added faction entry", {
-        actorId: actor.id,
-        actorName: actor.name,
-        groupIndex,
-        addedName: newName,
-        totalFactions: factions.length
-      });
-    });
+    } catch (error) {
+      console.error(`${MODULE_ID} | Failed adding faction`, error);
+      return;
+    }
+    _preferredTabByApp.set(app, TAB_KEY);
     app.render(true);
   });
 
@@ -549,22 +584,28 @@ function bindFactionStatusListeners(app, html, actor) {
     const factionIndex = Number.parseInt(event.currentTarget.dataset.factionIndex, 10);
     if (Number.isNaN(groupIndex) || Number.isNaN(factionIndex)) return;
 
-    await enqueueActorMutation(actor.id, async () => {
-      const groups = getFactionGroups(actor);
-      mergePendingNames(html, groups);
-      if (groupIndex < 0 || groupIndex >= groups.length) return;
-      const factions = groups[groupIndex].factions;
-      if (factionIndex < 0 || factionIndex >= factions.length) return;
-      factions.splice(factionIndex, 1);
-      await setFactionGroups(actor, groups);
-      debugLog("Deleted faction entry", {
-        actorId: actor.id,
-        actorName: actor.name,
-        groupIndex,
-        factionIndex,
-        remainingFactions: factions.length
+    try {
+      await enqueueActorMutation(actor.id, async () => {
+        const groups = getFactionGroups(actor);
+        mergePendingNames(html, groups);
+        if (groupIndex < 0 || groupIndex >= groups.length) return;
+        const factions = groups[groupIndex].factions;
+        if (factionIndex < 0 || factionIndex >= factions.length) return;
+        factions.splice(factionIndex, 1);
+        await setFactionGroups(actor, groups);
+        debugLog("Deleted faction entry", {
+          actorId: actor.id,
+          actorName: actor.name,
+          groupIndex,
+          factionIndex,
+          remainingFactions: factions.length
+        });
       });
-    });
+    } catch (error) {
+      console.error(`${MODULE_ID} | Failed deleting faction`, error);
+      return;
+    }
+    _preferredTabByApp.set(app, TAB_KEY);
     app.render(true);
   });
 
@@ -728,24 +769,37 @@ function bindDragAndDropListeners(app, html, actor, canManage = () => canManageS
 
     if (srcGroupIndex === targetGroupIndex && srcFactionIndex === targetFactionIndex) return;
 
-    await enqueueActorMutation(actor.id, async () => {
-      const groups = getFactionGroups(actor);
-      mergePendingNames(html, groups);
-      const [movedFaction] = groups[srcGroupIndex].factions.splice(srcFactionIndex, 1);
-      const adjustedTarget = (srcGroupIndex === targetGroupIndex && srcFactionIndex < targetFactionIndex)
-        ? targetFactionIndex - 1
-        : targetFactionIndex;
-      groups[targetGroupIndex].factions.splice(adjustedTarget, 0, movedFaction);
-      await setFactionGroups(actor, groups);
-      debugLog("Reordered faction", {
-        actorId: actor.id,
-        actorName: actor.name,
-        srcGroupIndex,
-        srcFactionIndex,
-        targetGroupIndex,
-        targetFactionIndex: adjustedTarget
+    try {
+      await enqueueActorMutation(actor.id, async () => {
+        const groups = getFactionGroups(actor);
+        mergePendingNames(html, groups);
+        if (srcGroupIndex < 0 || srcGroupIndex >= groups.length) return;
+        if (targetGroupIndex < 0 || targetGroupIndex >= groups.length) return;
+        const srcFactions = groups[srcGroupIndex].factions;
+        const targetFactions = groups[targetGroupIndex].factions;
+        if (srcFactionIndex < 0 || srcFactionIndex >= srcFactions.length) return;
+        if (targetFactionIndex < 0 || targetFactionIndex >= targetFactions.length) return;
+        const [movedFaction] = srcFactions.splice(srcFactionIndex, 1);
+        if (!movedFaction) return;
+        const adjustedTarget = (srcGroupIndex === targetGroupIndex && srcFactionIndex < targetFactionIndex)
+          ? targetFactionIndex - 1
+          : targetFactionIndex;
+        targetFactions.splice(adjustedTarget, 0, movedFaction);
+        await setFactionGroups(actor, groups);
+        debugLog("Reordered faction", {
+          actorId: actor.id,
+          actorName: actor.name,
+          srcGroupIndex,
+          srcFactionIndex,
+          targetGroupIndex,
+          targetFactionIndex: adjustedTarget
+        });
       });
-    });
+    } catch (error) {
+      console.error(`${MODULE_ID} | Failed reordering faction`, error);
+      return;
+    }
+    _preferredTabByApp.set(app, TAB_KEY);
     app.render(true);
   });
 
@@ -769,25 +823,38 @@ function bindDragAndDropListeners(app, html, actor, canManage = () => canManageS
     const srcFactionIndex = _dragState.factionIndex;
     _dragState = null;
 
-    await enqueueActorMutation(actor.id, async () => {
-      const groups = getFactionGroups(actor);
-      mergePendingNames(html, groups);
+    try {
+      await enqueueActorMutation(actor.id, async () => {
+        const groups = getFactionGroups(actor);
+        mergePendingNames(html, groups);
+        if (targetGroupIndex < 0 || targetGroupIndex >= groups.length) return;
 
-      if (dragKind === "group") {
-        if (srcGroupIndex === targetGroupIndex) return;
-        const [movedGroup] = groups.splice(srcGroupIndex, 1);
-        const adjustedTarget = srcGroupIndex < targetGroupIndex ? targetGroupIndex - 1 : targetGroupIndex;
-        groups.splice(adjustedTarget, 0, movedGroup);
-        await setFactionGroups(actor, groups);
-        debugLog("Reordered group", { actorId: actor.id, actorName: actor.name, from: srcGroupIndex, to: adjustedTarget });
-      } else if (dragKind === "faction") {
-        if (srcGroupIndex === targetGroupIndex) return;
-        const [movedFaction] = groups[srcGroupIndex].factions.splice(srcFactionIndex, 1);
-        groups[targetGroupIndex].factions.push(movedFaction);
-        await setFactionGroups(actor, groups);
-        debugLog("Moved faction to group", { actorId: actor.id, actorName: actor.name, srcGroupIndex, srcFactionIndex, targetGroupIndex });
-      }
-    });
+        if (dragKind === "group") {
+          if (srcGroupIndex < 0 || srcGroupIndex >= groups.length) return;
+          if (srcGroupIndex === targetGroupIndex) return;
+          const [movedGroup] = groups.splice(srcGroupIndex, 1);
+          if (!movedGroup) return;
+          const adjustedTarget = srcGroupIndex < targetGroupIndex ? targetGroupIndex - 1 : targetGroupIndex;
+          groups.splice(adjustedTarget, 0, movedGroup);
+          await setFactionGroups(actor, groups);
+          debugLog("Reordered group", { actorId: actor.id, actorName: actor.name, from: srcGroupIndex, to: adjustedTarget });
+        } else if (dragKind === "faction") {
+          if (srcGroupIndex < 0 || srcGroupIndex >= groups.length) return;
+          if (srcGroupIndex === targetGroupIndex) return;
+          const srcFactions = groups[srcGroupIndex].factions;
+          if (srcFactionIndex < 0 || srcFactionIndex >= srcFactions.length) return;
+          const [movedFaction] = srcFactions.splice(srcFactionIndex, 1);
+          if (!movedFaction) return;
+          groups[targetGroupIndex].factions.push(movedFaction);
+          await setFactionGroups(actor, groups);
+          debugLog("Moved faction to group", { actorId: actor.id, actorName: actor.name, srcGroupIndex, srcFactionIndex, targetGroupIndex });
+        }
+      });
+    } catch (error) {
+      console.error(`${MODULE_ID} | Failed dropping on group card`, error);
+      return;
+    }
+    _preferredTabByApp.set(app, TAB_KEY);
     app.render(true);
   });
 
