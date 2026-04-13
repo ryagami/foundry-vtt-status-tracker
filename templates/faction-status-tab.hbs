@@ -11,62 +11,92 @@
       {{#each groups as |group groupIndex|}}
         <section class="faction-group-card" {{#if ../permissions.canManageStructure}}draggable="true"{{/if}} data-group-index="{{groupIndex}}">
           <div class="faction-group-header">
-            {{#if ../permissions.canManageStructure}}
-              <span class="faction-drag-handle" aria-hidden="true"><i class="fa-solid fa-grip-vertical"></i></span>
-            {{/if}}
-            <label>
-              {{../labels.groupName}}
+            <div class="faction-group-main">
+              {{#if ../permissions.canManageStructure}}
+                <span class="faction-drag-handle" aria-hidden="true"><i class="fa-solid fa-grip-vertical"></i></span>
+              {{/if}}
+              <button
+                type="button"
+                class="faction-group-toggle"
+                data-group-index="{{groupIndex}}"
+                aria-label="{{../labels.toggleGroupAria}}"
+                title="{{../labels.toggleGroupAria}}"
+                aria-expanded="true"
+              >
+                <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+              </button>
               <input
                 type="text"
                 class="faction-group-name"
                 data-group-index="{{groupIndex}}"
                 value="{{group.name}}"
+                aria-label="{{../labels.groupName}}"
                 {{#unless ../permissions.canManageStructure}}disabled{{/unless}}
               />
-            </label>
+            </div>
 
-            {{#if ../permissions.canManageStructure}}
-              <div class="faction-group-actions">
+            <div class="faction-group-actions">
+              <span class="faction-count-badge" title="{{../labels.factionCountLabel}}">{{group.factions.length}}</span>
+              {{#if ../permissions.canManageStructure}}
                 <button
                   type="button"
-                  class="faction-status-add"
+                  class="faction-status-add icon-button"
                   data-group-index="{{groupIndex}}"
+                  aria-label="{{../labels.addFactionAria}}"
+                  title="{{../labels.addFactionAria}}"
                 >
-                  {{../labels.addFaction}}
+                  <i class="fa-solid fa-plus" aria-hidden="true"></i>
                 </button>
                 <button
                   type="button"
-                  class="faction-group-delete"
+                  class="faction-group-delete icon-button"
                   data-group-index="{{groupIndex}}"
                   aria-label="{{../labels.deleteGroupAria}}"
+                  title="{{../labels.deleteGroupAria}}"
                 >
-                  {{../labels.deleteGroup}}
+                  <i class="fa-solid fa-trash" aria-hidden="true"></i>
                 </button>
-              </div>
-            {{/if}}
+              {{/if}}
+            </div>
           </div>
 
-          {{#if group.factions.length}}
-            <div class="faction-group-factions">
+          <div class="faction-group-body">
+            <div class="faction-group-columns" aria-hidden="true">
+              <span>{{../labels.name}}</span>
+              <span>{{../labels.status}}</span>
+              <span>{{../labels.actions}}</span>
+            </div>
+
+            {{#if group.factions.length}}
+              <div class="faction-group-factions">
               {{#each group.factions as |faction factionIndex|}}
                 <div class="faction-status-row" {{#if ../../permissions.canManageStructure}}draggable="true"{{/if}} data-group-index="{{groupIndex}}" data-faction-index="{{factionIndex}}">
                   {{#if ../../permissions.canManageStructure}}
                     <span class="faction-drag-handle" aria-hidden="true"><i class="fa-solid fa-grip-vertical"></i></span>
                   {{/if}}
-                  <label>
-                    {{../../labels.name}}
-                    <input
-                      type="text"
-                      class="faction-status-name"
+                  <input
+                    type="text"
+                    class="faction-status-name"
+                    data-group-index="{{groupIndex}}"
+                    data-faction-index="{{factionIndex}}"
+                    value="{{faction.name}}"
+                    aria-label="{{../../labels.name}}"
+                    {{#unless ../../permissions.canManageStructure}}disabled{{/unless}}
+                  />
+
+                  <div class="faction-status-stepper">
+                    <button
+                      type="button"
+                      class="faction-status-step icon-button"
                       data-group-index="{{groupIndex}}"
                       data-faction-index="{{factionIndex}}"
-                      value="{{faction.name}}"
-                      {{#unless ../../permissions.canManageStructure}}disabled{{/unless}}
-                    />
-                  </label>
-
-                  <label>
-                    {{../../labels.status}}
+                      data-delta="-1"
+                      aria-label="{{../../labels.decreaseStatusAria}}"
+                      title="{{../../labels.decreaseStatusAria}}"
+                      {{#unless ../../permissions.canEditValues}}disabled{{/unless}}
+                    >
+                      <i class="fa-solid fa-minus" aria-hidden="true"></i>
+                    </button>
                     <input
                       type="number"
                       class="faction-status-value"
@@ -74,27 +104,44 @@
                       data-faction-index="{{factionIndex}}"
                       value="{{faction.value}}"
                       step="1"
+                      aria-label="{{../../labels.status}}"
                       {{#unless ../../permissions.canEditValues}}disabled{{/unless}}
                     />
-                  </label>
+                    <button
+                      type="button"
+                      class="faction-status-step icon-button"
+                      data-group-index="{{groupIndex}}"
+                      data-faction-index="{{factionIndex}}"
+                      data-delta="1"
+                      aria-label="{{../../labels.increaseStatusAria}}"
+                      title="{{../../labels.increaseStatusAria}}"
+                      {{#unless ../../permissions.canEditValues}}disabled{{/unless}}
+                    >
+                      <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                    </button>
+                  </div>
 
                   {{#if ../../permissions.canManageStructure}}
                     <button
                       type="button"
-                      class="faction-status-delete"
+                      class="faction-status-delete icon-button"
                       data-group-index="{{groupIndex}}"
                       data-faction-index="{{factionIndex}}"
                       aria-label="{{../../labels.deleteFactionAria}}"
+                      title="{{../../labels.deleteFactionAria}}"
                     >
-                      {{../../labels.deleteFaction}}
+                      <i class="fa-solid fa-trash" aria-hidden="true"></i>
                     </button>
+                  {{else}}
+                    <span></span>
                   {{/if}}
                 </div>
               {{/each}}
-            </div>
-          {{else}}
-            <p class="faction-status-empty">{{../labels.empty}}</p>
-          {{/if}}
+              </div>
+            {{else}}
+              <p class="faction-status-empty">{{../labels.empty}}</p>
+            {{/if}}
+          </div>
         </section>
       {{/each}}
     {{else}}

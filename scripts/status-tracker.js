@@ -253,11 +253,17 @@ async function onRenderActorSheet(app, html) {
       groupsHeader: localize("groupsHeader", "Groups"),
       groupName: localize("groupNameLabel", "Group Name"),
       addGroup: localize("addGroup", "Add Group"),
+      actions: localize("actionsLabel", "Actions"),
+      toggleGroupAria: localize("toggleGroupAriaLabel", "Toggle group"),
+      factionCountLabel: localize("factionCountLabel", "Faction count"),
       deleteGroup: localize("deleteGroupLabel", "Delete Group"),
       deleteGroupAria: localize("deleteGroupAriaLabel", "Delete group"),
       addFaction: localize("addFaction", "Add Faction"),
+      addFactionAria: localize("addFactionAriaLabel", "Add faction"),
       name: localize("nameLabel", "Name"),
       status: localize("statusLabel", "Status"),
+      decreaseStatusAria: localize("decreaseStatusAriaLabel", "Decrease status"),
+      increaseStatusAria: localize("increaseStatusAriaLabel", "Increase status"),
       deleteFaction: localize("deleteLabel", "Delete"),
       deleteFactionAria: localize("deleteAriaLabel", "Delete faction"),
       empty: localize("emptyLabel", "No factions tracked yet."),
@@ -359,6 +365,16 @@ function bindFactionStatusListeners(app, html, actor) {
       remainingGroups: groups.length
     });
     app.render(true);
+  });
+
+  html.off("click", `${selectorRoot} .faction-group-toggle`);
+  html.on("click", `${selectorRoot} .faction-group-toggle`, (event) => {
+    event.preventDefault();
+    const card = event.currentTarget.closest(".faction-group-card");
+    if (!card) return;
+
+    const isCollapsed = card.classList.toggle("is-collapsed");
+    event.currentTarget.setAttribute("aria-expanded", String(!isCollapsed));
   });
 
   html.off("change", `${selectorRoot} .faction-group-name`);
@@ -491,6 +507,42 @@ function bindFactionStatusListeners(app, html, actor) {
       actorName: actor.name,
       groupIndex,
       factionIndex,
+      value: factions[factionIndex].value
+    });
+  });
+
+  html.off("click", `${selectorRoot} .faction-status-step`);
+  html.on("click", `${selectorRoot} .faction-status-step`, async (event) => {
+    event.preventDefault();
+    if (!canEditFactionValues(actor)) return;
+
+    const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
+    const factionIndex = Number.parseInt(event.currentTarget.dataset.factionIndex, 10);
+    const delta = Number.parseInt(event.currentTarget.dataset.delta, 10);
+    if (Number.isNaN(groupIndex) || Number.isNaN(factionIndex) || Number.isNaN(delta)) return;
+
+    const groups = getFactionGroups(actor);
+    if (groupIndex < 0 || groupIndex >= groups.length) return;
+
+    const factions = groups[groupIndex].factions;
+    if (factionIndex < 0 || factionIndex >= factions.length) return;
+
+    const nextValue = Number.parseInt(factions[factionIndex].value, 10) + delta;
+    factions[factionIndex].value = Number.isNaN(nextValue) ? delta : nextValue;
+
+    await setFactionGroups(actor, groups);
+
+    const input = html.find(
+      `${selectorRoot} .faction-status-value[data-group-index='${groupIndex}'][data-faction-index='${factionIndex}']`
+    ).first();
+    if (input.length) input.val(factions[factionIndex].value);
+
+    debugLog("Stepped faction value", {
+      actorId: actor.id,
+      actorName: actor.name,
+      groupIndex,
+      factionIndex,
+      delta,
       value: factions[factionIndex].value
     });
   });

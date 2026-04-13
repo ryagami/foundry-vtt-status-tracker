@@ -35,50 +35,139 @@ a[data-tab="faction-status"] i {
 .faction-group-card {
   border: 1px solid var(--color-border-light-tertiary, #bbb);
   border-radius: 6px;
-  padding: 0.5rem;
+  padding: 0.35rem 0.5rem 0.5rem;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.35rem;
+  background: color-mix(in srgb, var(--color-bg-option, #2a2d35) 65%, transparent);
 }
 
 .faction-group-header {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: end;
+  grid-template-columns: 1fr auto;
+  align-items: center;
   gap: 0.5rem;
 }
 
-.faction-group-header label,
-.faction-status-row label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+.faction-group-main {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.faction-group-name {
+  width: 100%;
+}
+
+.faction-group-toggle {
+  width: 1.8rem;
+  height: 1.8rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.faction-group-toggle i {
+  transition: transform 140ms ease;
+}
+
+.faction-group-card.is-collapsed .faction-group-toggle i {
+  transform: rotate(-90deg);
+}
+
+.faction-group-card.is-collapsed .faction-group-body {
+  display: none;
 }
 
 .faction-group-actions {
   display: flex;
   gap: 0.35rem;
+  align-items: center;
+}
+
+.faction-count-badge {
+  min-width: 1.6rem;
+  height: 1.35rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-light-tertiary, #666);
+  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.faction-group-columns {
+  display: grid;
+  grid-template-columns: 1fr 8.5rem 2.25rem;
+  gap: 0.5rem;
+  padding: 0 0.2rem;
+  font-size: 0.8rem;
+  color: var(--color-text-dark-secondary, #888);
+}
+
+.faction-group-columns span:last-child {
+  text-align: center;
 }
 
 .faction-group-factions {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.35rem;
 }
 
 .faction-status-row {
   display: grid;
-  grid-template-columns: auto 1fr 8rem auto;
-  gap: 0.5rem;
-  align-items: end;
+  grid-template-columns: auto 1fr 8.5rem 2.25rem;
+  gap: 0.45rem;
+  align-items: center;
   border: 1px solid var(--color-border-light-tertiary, #ccc);
   border-radius: 4px;
-  padding: 0.5rem;
+  padding: 0.35rem;
+  background: color-mix(in srgb, var(--color-bg-option, #1f1f24) 85%, transparent);
+}
+
+.faction-status-row .faction-status-name,
+.faction-status-row .faction-status-value {
+  margin: 0;
+}
+
+.faction-status-stepper {
+  display: grid;
+  grid-template-columns: 1.9rem 1fr 1.9rem;
+  gap: 0.2rem;
+  align-items: center;
+}
+
+.faction-status-step {
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-button {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.faction-status-delete,
+.faction-group-delete {
+  color: var(--color-text-light-6, #b7b7b7);
 }
 
 .faction-status-empty {
   color: var(--color-text-dark-secondary, #555);
   font-style: italic;
+  margin: 0.2rem 0;
 }
 
 .faction-drag-handle {
@@ -103,4 +192,18 @@ a[data-tab="faction-status"] i {
 .faction-status-row.drag-over {
   outline: 2px dashed var(--color-border-highlight, #4b7be5);
   outline-offset: 2px;
+}
+
+@media (max-width: 760px) {
+  .faction-group-columns {
+    grid-template-columns: 1fr 7.5rem 2rem;
+  }
+
+  .faction-status-row {
+    grid-template-columns: auto 1fr 7.5rem 2rem;
+  }
+
+  .faction-status-stepper {
+    grid-template-columns: 1.6rem 1fr 1.6rem;
+  }
 }
