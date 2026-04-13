@@ -1,0 +1,575 @@
+export const MODULE_ID = "foundry-vtt-status-tracker";
+const TAB_KEY = "faction-status";
+const DEFAULT_FACTION_NAME = "New Faction";
+const DEFAULT_GROUP_NAME = "New group";
+const DEBUG_SETTING_KEY = "debugLogging";
+let _dragState = null;
+const RENDER_HOOKS = [
+  "renderActorSheet",
+  "renderActorSheet5eCharacter",
+  "renderActorSheet5eCharacter2"
+];
+
+export function initFactionStatusTracker() {
+  game.settings.register(MODULE_ID, DEBUG_SETTING_KEY, {
+    name: `${MODULE_ID}.debugSettingName`,
+    hint: `${MODULE_ID}.debugSettingHint`,
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false
+  });
+
+  for (const hookName of RENDER_HOOKS) {
+    Hooks.on(hookName, onRenderActorSheet);
+    debugLog("Registered render hook", { hookName });
+  }
+}
+
+function isDebugEnabled() {
+  return game.settings?.get?.(MODULE_ID, DEBUG_SETTING_KEY) === true;
+}
+
+function debugLog(message, context = {}) {
+  if (!isDebugEnabled()) return;
+  console.info(`${MODULE_ID} | ${message}`, context);
+}
+
+function createUniqueName(existingNames, baseName) {
+  const normalizedNames = new Set(
+    existingNames
+      .filter((name) => typeof name === "string")
+      .map((name) => name.trim().toLowerCase())
+  );
+
+  if (!normalizedNames.has(baseName.toLowerCase())) {
+    return baseName;
+  }
+
+  let suffix = 1;
+  while (normalizedNames.has(`${baseName.toLowerCase()}(${suffix})`)) {
+    suffix += 1;
+  }
+
+  return `${baseName}(${suffix})`;
+}
+
+function sanitizeFactionEntry(entry, index) {
+  const value = Number.parseInt(entry?.value ?? 0, 10);
+  return {
+    id: typeof entry?.id === "string" && entry.id.trim() ? entry.id : `faction-${index}-${foundry.utils.randomID(6)}`,
+    name: typeof entry?.name === "string" && entry.name.trim() ? entry.name.trim() : DEFAULT_FACTION_NAME,
+    value: Number.isNaN(value) ? 0 : value
+  };
+}
+
+function sanitizeGroupEntry(entry, index) {
+  const factions = Array.isArray(entry?.factions)
+    ? entry.factions.map((faction, factionIndex) => sanitizeFactionEntry(faction, factionIndex))
+    : [];
+
+  return {
+    id: typeof entry?.id === "string" && entry.id.trim() ? entry.id : `group-${index}-${foundry.utils.randomID(6)}`,
+    name: typeof entry?.name === "string" && entry.name.trim() ? entry.name.trim() : DEFAULT_GROUP_NAME,
+    factions
+  };
+}
+
+export function getFactionGroups(actor) {
+  const groups = actor.getFlag(MODULE_ID, "groups");
+  if (Array.isArray(groups)) {
+    return groups.map((entry, index) => sanitizeGroupEntry(entry, index));
+  }
+
+  const legacyFactions = actor.getFlag(MODULE_ID, "factions");
+  if (Array.isArray(legacyFactions) && legacyFactions.length) {
+    const factions = legacyFactions.map((entry, index) => sanitizeFactionEntry(entry, index));
+    return [{
+      id: `group-legacy-${foundry.utils.randomID(6)}`,
+      name: DEFAULT_GROUP_NAME,
+      factions
+    }];
+  }
+
+  return [];
+}
+
+export async function setFactionGroups(actor, groups) {
+  const sanitized = Array.isArray(groups)
+    ? groups.map((entry, index) => sanitizeGroupEntry(entry, index))
+    : [];
+
+  await actor.setFlag(MODULE_ID, "groups", sanitized);
+
+  if (actor.getFlag(MODULE_ID, "factions") !== undefined) {
+    await actor.unsetFlag(MODULE_ID, "factions");
+  }
+}
+
+export function createUniqueFactionName(existingNames, baseName = DEFAULT_FACTION_NAME) {
+  return createUniqueName(existingNames, baseName);
+}
+
+export function createUniqueGroupName(existingNames, baseName = DEFAULT_GROUP_NAME) {
+  return createUniqueName(existingNames, baseName);
+}
+
+function localize(key, fallback) {
+  const resolved = game.i18n?.localize?.(`${MODULE_ID}.${key}`);
+  return resolved && resolved !== `${MODULE_ID}.${key}` ? resolved : fallback;
+}
+
+function resolveSheetTabContext(app, html) {
+  const navCandidates = html.find("nav.tabs, nav.sheet-navigation.tabs, nav.sheet-tabs");
+  debugLog("Resolving tab context", {
+    navCandidates: navCandidates.length,
+    tabControllers: Array.isArray(app?._tabs) ? app._tabs.length : 0
+  });
+
+  for (const element of navCandidates) {
+    const nav = html.find(element);
+    if (!nav.length) continue;
+    if (nav.find(`[data-tab='${TAB_KEY}']`).length) {
+      debugLog("Tab already present in navigation", {
+        strategy: "dom-nav-scan"
+      });
+      return null;
+    }
+
+    const navGroup = nav.data("group") || nav.find("[data-group]").first().data("group") || "primary";
+    const existingTab = html.find(`.tab[data-group='${navGroup}']`).first();
+    const tabContainer = existingTab.parent();
+
+    if (tabContainer.length) {
+      debugLog("Resolved tab context", {
+        strategy: "dom-nav-scan",
+        navGroup
+      });
+      return { nav, tabContainer, navGroup };
+    }
+  }
+
+  const tabsControllers = Array.isArray(app?._tabs) ? app._tabs : [];
+  for (const tabsController of tabsControllers) {
+    const navGroup = tabsController?.group || "primary";
+    const navSelector = tabsController?.navSelector;
+    const contentSelector = tabsController?.contentSelector;
+
+    const nav = navSelector
+      ? html.find(navSelector).first()
+      : html.find(`nav.tabs[data-group='${navGroup}'], nav.sheet-navigation.tabs, nav.sheet-tabs`).first();
+
+    if (!nav.length || nav.find(`[data-tab='${TAB_KEY}']`).length) continue;
+
+    const tabContainer = contentSelector
+      ? html.find(contentSelector).first()
+      : html.find(`.tab[data-group='${navGroup}']`).first().parent();
+
+    if (tabContainer.length) {
+      debugLog("Resolved tab context", {
+        strategy: "tabs-controller",
+        navGroup,
+        navSelector: navSelector ?? null,
+        contentSelector: contentSelector ?? null
+      });
+      return { nav, tabContainer, navGroup };
+    }
+  }
+
+  const fallbackNav = html.find("nav.tabs[data-group='primary'], nav.sheet-navigation.tabs, nav.sheet-tabs").first();
+  if (!fallbackNav.length || fallbackNav.find(`[data-tab='${TAB_KEY}']`).length) return null;
+
+  const fallbackTabContainer = html.find(".sheet-body, section.sheet-body, .tab-body").first();
+  if (!fallbackTabContainer.length) return null;
+
+  debugLog("Resolved tab context", {
+    strategy: "fallback-primary",
+    navGroup: "primary"
+  });
+  return { nav: fallbackNav, tabContainer: fallbackTabContainer, navGroup: "primary" };
+}
+
+function rebindSheetTabs(app, html, targetGroup) {
+  const tabsControllers = Array.isArray(app?._tabs) ? app._tabs : [];
+
+  for (const tabsController of tabsControllers) {
+    if (!tabsController) continue;
+    if (tabsController.group && tabsController.group !== targetGroup) continue;
+
+    try {
+      tabsController.bind(html[0]);
+    } catch (error) {
+      console.warn(`${MODULE_ID} | Unable to bind tabs controller`, error);
+    }
+  }
+}
+
+async function onRenderActorSheet(app, html) {
+  const actor = app?.actor ?? app?.object;
+  if (!actor || actor.type !== "character") return;
+  if (!game.user?.isGM) return;
+
+  const context = resolveSheetTabContext(app, html);
+  if (!context) {
+    debugLog("Skipping tab injection", {
+      reason: "no-tab-context",
+      actorId: actor.id,
+      sheetClass: app?.constructor?.name ?? "unknown"
+    });
+    return;
+  }
+
+  const { nav, tabContainer, navGroup } = context;
+
+  const groups = getFactionGroups(actor);
+  const tabLabel = localize("tabLabel", "Faction Status");
+
+  nav.append(`<a class='item' data-group='${navGroup}' data-tab='${TAB_KEY}'>${tabLabel}</a>`);
+
+  const tabHtml = await renderTemplate(`modules/${MODULE_ID}/templates/faction-status-tab.hbs`, {
+    groups,
+    tabGroup: navGroup,
+    labels: {
+      header: localize("header", "Faction Status"),
+      groupsHeader: localize("groupsHeader", "Groups"),
+      groupName: localize("groupNameLabel", "Group Name"),
+      addGroup: localize("addGroup", "Add Group"),
+      deleteGroup: localize("deleteGroupLabel", "Delete Group"),
+      deleteGroupAria: localize("deleteGroupAriaLabel", "Delete group"),
+      addFaction: localize("addFaction", "Add Faction"),
+      name: localize("nameLabel", "Name"),
+      status: localize("statusLabel", "Status"),
+      deleteFaction: localize("deleteLabel", "Delete"),
+      deleteFactionAria: localize("deleteAriaLabel", "Delete faction"),
+      empty: localize("emptyLabel", "No factions tracked yet."),
+      emptyGroups: localize("emptyGroupsLabel", "No groups created yet.")
+    }
+  });
+
+  tabContainer.append(tabHtml);
+  rebindSheetTabs(app, html, navGroup);
+  debugLog("Injected faction status tab", {
+    actorId: actor.id,
+    actorName: actor.name,
+    sheetClass: app?.constructor?.name ?? "unknown",
+    navGroup,
+    groups: groups.length
+  });
+
+  bindFactionStatusListeners(app, html, actor);
+}
+
+function bindFactionStatusListeners(app, html, actor) {
+  const selectorRoot = `.tab[data-tab='${TAB_KEY}']`;
+
+  html.off("click", `${selectorRoot} .faction-group-add-global`);
+  html.on("click", `${selectorRoot} .faction-group-add-global`, async (event) => {
+    event.preventDefault();
+    if (!game.user?.isGM) return;
+
+    const groups = getFactionGroups(actor);
+    const newGroupName = createUniqueGroupName(groups.map((group) => group.name), DEFAULT_GROUP_NAME);
+    groups.push({
+      id: foundry.utils.randomID(),
+      name: newGroupName,
+      factions: []
+    });
+
+    await setFactionGroups(actor, groups);
+    debugLog("Added group", {
+      actorId: actor.id,
+      actorName: actor.name,
+      addedGroup: newGroupName,
+      totalGroups: groups.length
+    });
+    app.render(true);
+  });
+
+  html.off("click", `${selectorRoot} .faction-group-delete`);
+  html.on("click", `${selectorRoot} .faction-group-delete`, async (event) => {
+    event.preventDefault();
+    if (!game.user?.isGM) return;
+
+    const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
+    if (Number.isNaN(groupIndex)) return;
+
+    const groups = getFactionGroups(actor);
+    if (groupIndex < 0 || groupIndex >= groups.length) return;
+
+    groups.splice(groupIndex, 1);
+    await setFactionGroups(actor, groups);
+    debugLog("Deleted group", {
+      actorId: actor.id,
+      actorName: actor.name,
+      groupIndex,
+      remainingGroups: groups.length
+    });
+    app.render(true);
+  });
+
+  html.off("change", `${selectorRoot} .faction-group-name`);
+  html.on("change", `${selectorRoot} .faction-group-name`, async (event) => {
+    if (!game.user?.isGM) return;
+
+    const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
+    if (Number.isNaN(groupIndex)) return;
+
+    const groups = getFactionGroups(actor);
+    if (groupIndex < 0 || groupIndex >= groups.length) return;
+
+    const nextName = String(event.currentTarget.value ?? "").trim();
+    groups[groupIndex].name = nextName || createUniqueGroupName(groups.map((group, i) => (i === groupIndex ? "" : group.name)), DEFAULT_GROUP_NAME);
+
+    await setFactionGroups(actor, groups);
+    debugLog("Updated group name", {
+      actorId: actor.id,
+      actorName: actor.name,
+      groupIndex,
+      name: groups[groupIndex].name
+    });
+  });
+
+  html.off("click", `${selectorRoot} .faction-status-add`);
+  html.on("click", `${selectorRoot} .faction-status-add`, async (event) => {
+    event.preventDefault();
+    if (!game.user?.isGM) return;
+
+    const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
+    if (Number.isNaN(groupIndex)) return;
+
+    const groups = getFactionGroups(actor);
+    if (groupIndex < 0 || groupIndex >= groups.length) return;
+
+    const factions = groups[groupIndex].factions;
+    const newName = createUniqueFactionName(factions.map((faction) => faction.name), DEFAULT_FACTION_NAME);
+
+    factions.push({
+      id: foundry.utils.randomID(),
+      name: newName,
+      value: 0
+    });
+
+    await setFactionGroups(actor, groups);
+    debugLog("Added faction entry", {
+      actorId: actor.id,
+      actorName: actor.name,
+      groupIndex,
+      addedName: newName,
+      totalFactions: factions.length
+    });
+    app.render(true);
+  });
+
+  html.off("click", `${selectorRoot} .faction-status-delete`);
+  html.on("click", `${selectorRoot} .faction-status-delete`, async (event) => {
+    event.preventDefault();
+    if (!game.user?.isGM) return;
+
+    const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
+    const factionIndex = Number.parseInt(event.currentTarget.dataset.factionIndex, 10);
+    if (Number.isNaN(groupIndex) || Number.isNaN(factionIndex)) return;
+
+    const groups = getFactionGroups(actor);
+    if (groupIndex < 0 || groupIndex >= groups.length) return;
+
+    const factions = groups[groupIndex].factions;
+    if (factionIndex < 0 || factionIndex >= factions.length) return;
+
+    factions.splice(factionIndex, 1);
+    await setFactionGroups(actor, groups);
+    debugLog("Deleted faction entry", {
+      actorId: actor.id,
+      actorName: actor.name,
+      groupIndex,
+      factionIndex,
+      remainingFactions: factions.length
+    });
+    app.render(true);
+  });
+
+  html.off("change", `${selectorRoot} .faction-status-name`);
+  html.on("change", `${selectorRoot} .faction-status-name`, async (event) => {
+    if (!game.user?.isGM) return;
+
+    const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
+    const factionIndex = Number.parseInt(event.currentTarget.dataset.factionIndex, 10);
+    if (Number.isNaN(groupIndex) || Number.isNaN(factionIndex)) return;
+
+    const groups = getFactionGroups(actor);
+    if (groupIndex < 0 || groupIndex >= groups.length) return;
+
+    const factions = groups[groupIndex].factions;
+    if (factionIndex < 0 || factionIndex >= factions.length) return;
+
+    const nextName = String(event.currentTarget.value ?? "").trim();
+    factions[factionIndex].name = nextName || createUniqueFactionName(factions.map((faction, i) => (i === factionIndex ? "" : faction.name)), DEFAULT_FACTION_NAME);
+
+    await setFactionGroups(actor, groups);
+    debugLog("Updated faction name", {
+      actorId: actor.id,
+      actorName: actor.name,
+      groupIndex,
+      factionIndex,
+      name: factions[factionIndex].name
+    });
+  });
+
+  html.off("change", `${selectorRoot} .faction-status-value`);
+  html.on("change", `${selectorRoot} .faction-status-value`, async (event) => {
+    if (!game.user?.isGM) return;
+
+    const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
+    const factionIndex = Number.parseInt(event.currentTarget.dataset.factionIndex, 10);
+    if (Number.isNaN(groupIndex) || Number.isNaN(factionIndex)) return;
+
+    const groups = getFactionGroups(actor);
+    if (groupIndex < 0 || groupIndex >= groups.length) return;
+
+    const factions = groups[groupIndex].factions;
+    if (factionIndex < 0 || factionIndex >= factions.length) return;
+
+    const parsedValue = Number.parseInt(event.currentTarget.value, 10);
+    factions[factionIndex].value = Number.isNaN(parsedValue) ? 0 : parsedValue;
+
+    await setFactionGroups(actor, groups);
+    debugLog("Updated faction value", {
+      actorId: actor.id,
+      actorName: actor.name,
+      groupIndex,
+      factionIndex,
+      value: factions[factionIndex].value
+    });
+  });
+
+  bindDragAndDropListeners(app, html, actor);
+}
+
+function bindDragAndDropListeners(app, html, actor) {
+  const selectorRoot = `.tab[data-tab='${TAB_KEY}']`;
+
+  html.off("dragstart", `${selectorRoot} .faction-group-card`);
+  html.on("dragstart", `${selectorRoot} .faction-group-card`, (event) => {
+    if (event.target.closest("input, button")) return;
+    const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
+    if (Number.isNaN(groupIndex)) return;
+    _dragState = { kind: "group", groupIndex };
+    event.originalEvent.dataTransfer.effectAllowed = "move";
+    event.currentTarget.classList.add("dragging");
+    event.stopImmediatePropagation();
+  });
+
+  html.off("dragstart", `${selectorRoot} .faction-status-row`);
+  html.on("dragstart", `${selectorRoot} .faction-status-row`, (event) => {
+    if (event.target.closest("input, button")) return;
+    const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
+    const factionIndex = Number.parseInt(event.currentTarget.dataset.factionIndex, 10);
+    if (Number.isNaN(groupIndex) || Number.isNaN(factionIndex)) return;
+    _dragState = { kind: "faction", groupIndex, factionIndex };
+    event.originalEvent.dataTransfer.effectAllowed = "move";
+    event.currentTarget.classList.add("dragging");
+    event.stopImmediatePropagation();
+  });
+
+  html.off("dragover", `${selectorRoot} .faction-status-row`);
+  html.on("dragover", `${selectorRoot} .faction-status-row`, (event) => {
+    if (_dragState?.kind !== "faction") return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    html.find(".drag-over").removeClass("drag-over");
+    event.currentTarget.classList.add("drag-over");
+  });
+
+  html.off("dragover", `${selectorRoot} .faction-group-card`);
+  html.on("dragover", `${selectorRoot} .faction-group-card`, (event) => {
+    if (!_dragState) return;
+    event.preventDefault();
+    html.find(".drag-over").removeClass("drag-over");
+    event.currentTarget.classList.add("drag-over");
+  });
+
+  html.off("drop", `${selectorRoot} .faction-status-row`);
+  html.on("drop", `${selectorRoot} .faction-status-row`, async (event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    event.currentTarget.classList.remove("drag-over");
+    if (_dragState?.kind !== "faction" || !game.user?.isGM) {
+      _dragState = null;
+      return;
+    }
+
+    const targetGroupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
+    const targetFactionIndex = Number.parseInt(event.currentTarget.dataset.factionIndex, 10);
+    if (Number.isNaN(targetGroupIndex) || Number.isNaN(targetFactionIndex)) {
+      _dragState = null;
+      return;
+    }
+
+    const { groupIndex: srcGroupIndex, factionIndex: srcFactionIndex } = _dragState;
+    _dragState = null;
+
+    if (srcGroupIndex === targetGroupIndex && srcFactionIndex === targetFactionIndex) return;
+
+    const groups = getFactionGroups(actor);
+    const [movedFaction] = groups[srcGroupIndex].factions.splice(srcFactionIndex, 1);
+    const adjustedTarget = (srcGroupIndex === targetGroupIndex && srcFactionIndex < targetFactionIndex)
+      ? targetFactionIndex - 1
+      : targetFactionIndex;
+    groups[targetGroupIndex].factions.splice(adjustedTarget, 0, movedFaction);
+
+    await setFactionGroups(actor, groups);
+    debugLog("Reordered faction", {
+      actorId: actor.id,
+      actorName: actor.name,
+      srcGroupIndex,
+      srcFactionIndex,
+      targetGroupIndex,
+      targetFactionIndex: adjustedTarget
+    });
+    app.render(true);
+  });
+
+  html.off("drop", `${selectorRoot} .faction-group-card`);
+  html.on("drop", `${selectorRoot} .faction-group-card`, async (event) => {
+    event.preventDefault();
+    event.currentTarget.classList.remove("drag-over");
+    if (!_dragState || !game.user?.isGM) {
+      _dragState = null;
+      return;
+    }
+
+    const targetGroupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
+    if (Number.isNaN(targetGroupIndex)) {
+      _dragState = null;
+      return;
+    }
+
+    const groups = getFactionGroups(actor);
+
+    if (_dragState.kind === "group") {
+      const srcGroupIndex = _dragState.groupIndex;
+      _dragState = null;
+      if (srcGroupIndex === targetGroupIndex) return;
+      const [movedGroup] = groups.splice(srcGroupIndex, 1);
+      const adjustedTarget = srcGroupIndex < targetGroupIndex ? targetGroupIndex - 1 : targetGroupIndex;
+      groups.splice(adjustedTarget, 0, movedGroup);
+      await setFactionGroups(actor, groups);
+      debugLog("Reordered group", { actorId: actor.id, actorName: actor.name, from: srcGroupIndex, to: adjustedTarget });
+      app.render(true);
+    } else if (_dragState.kind === "faction") {
+      const { groupIndex: srcGroupIndex, factionIndex: srcFactionIndex } = _dragState;
+      _dragState = null;
+      if (srcGroupIndex === targetGroupIndex) return;
+      const [movedFaction] = groups[srcGroupIndex].factions.splice(srcFactionIndex, 1);
+      groups[targetGroupIndex].factions.push(movedFaction);
+      await setFactionGroups(actor, groups);
+      debugLog("Moved faction to group", { actorId: actor.id, actorName: actor.name, srcGroupIndex, srcFactionIndex, targetGroupIndex });
+      app.render(true);
+    }
+  });
+
+  html.off("dragend", `${selectorRoot} .faction-group-card, ${selectorRoot} .faction-status-row`);
+  html.on("dragend", `${selectorRoot} .faction-group-card, ${selectorRoot} .faction-status-row`, () => {
+    _dragState = null;
+    html.find(".dragging, .drag-over").removeClass("dragging drag-over");
+  });
+}

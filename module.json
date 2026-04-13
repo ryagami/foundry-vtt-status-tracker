@@ -1,0 +1,39 @@
+{
+  "id": "foundry-vtt-status-tracker",
+  "title": "Faction Status Tracker",
+  "description": "Adds a GM-only character sheet tab for tracking faction status values.",
+  "version": "0.1.0",
+  "authors": [
+    {
+      "name": "Stefan"
+    }
+  ],
+  "compatibility": {
+    "minimum": "12",
+    "verified": "12"
+  },
+  "relationships": {
+    "systems": [
+      {
+        "id": "dnd5e",
+        "type": "system"
+      }
+    ]
+  },
+  "esmodules": [
+    "scripts/main.js"
+  ],
+  "styles": [
+    "styles/module.css"
+  ],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json"
+    }
+  ],
+  "url": "",
+  "manifest": "",
+  "download": ""
+}

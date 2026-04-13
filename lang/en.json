@@ -1,0 +1,18 @@
+{
+  "foundry-vtt-status-tracker.tabLabel": "Faction Status",
+  "foundry-vtt-status-tracker.header": "Faction Status",
+  "foundry-vtt-status-tracker.groupsHeader": "Groups",
+  "foundry-vtt-status-tracker.groupNameLabel": "Group Name",
+  "foundry-vtt-status-tracker.addGroup": "Add Group",
+  "foundry-vtt-status-tracker.deleteGroupLabel": "Delete Group",
+  "foundry-vtt-status-tracker.deleteGroupAriaLabel": "Delete group",
+  "foundry-vtt-status-tracker.addFaction": "Add Faction",
+  "foundry-vtt-status-tracker.nameLabel": "Name",
+  "foundry-vtt-status-tracker.statusLabel": "Status",
+  "foundry-vtt-status-tracker.deleteLabel": "Delete",
+  "foundry-vtt-status-tracker.deleteAriaLabel": "Delete faction",
+  "foundry-vtt-status-tracker.emptyLabel": "No factions tracked yet.",
+  "foundry-vtt-status-tracker.emptyGroupsLabel": "No groups created yet.",
+  "foundry-vtt-status-tracker.debugSettingName": "Enable Debug Logging",
+  "foundry-vtt-status-tracker.debugSettingHint": "Logs sheet hook and tab injection diagnostics to the browser console for troubleshooting."
+}

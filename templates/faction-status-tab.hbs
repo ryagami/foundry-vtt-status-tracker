@@ -1,0 +1,91 @@
+<div class="tab faction-status-tab" data-group="{{tabGroup}}" data-tab="faction-status">
+  <section class="faction-status-header">
+    <h3>{{labels.header}}</h3>
+    <button type="button" class="faction-group-add-global">{{labels.addGroup}}</button>
+  </section>
+
+  <section class="faction-status-list">
+    {{#if groups.length}}
+      {{#each groups as |group groupIndex|}}
+        <section class="faction-group-card" draggable="true" data-group-index="{{groupIndex}}">
+          <div class="faction-group-header">
+            <span class="faction-drag-handle" aria-hidden="true"><i class="fas fa-grip-vertical"></i></span>
+            <label>
+              {{../labels.groupName}}
+              <input
+                type="text"
+                class="faction-group-name"
+                data-group-index="{{groupIndex}}"
+                value="{{group.name}}"
+              />
+            </label>
+
+            <div class="faction-group-actions">
+              <button
+                type="button"
+                class="faction-status-add"
+                data-group-index="{{groupIndex}}"
+              >
+                {{../labels.addFaction}}
+              </button>
+              <button
+                type="button"
+                class="faction-group-delete"
+                data-group-index="{{groupIndex}}"
+                aria-label="{{../labels.deleteGroupAria}}"
+              >
+                {{../labels.deleteGroup}}
+              </button>
+            </div>
+          </div>
+
+          {{#if group.factions.length}}
+            <div class="faction-group-factions">
+              {{#each group.factions as |faction factionIndex|}}
+                <div class="faction-status-row" draggable="true" data-group-index="{{groupIndex}}" data-faction-index="{{factionIndex}}">
+                  <span class="faction-drag-handle" aria-hidden="true"><i class="fas fa-grip-vertical"></i></span>
+                  <label>
+                    {{../../labels.name}}
+                    <input
+                      type="text"
+                      class="faction-status-name"
+                      data-group-index="{{groupIndex}}"
+                      data-faction-index="{{factionIndex}}"
+                      value="{{faction.name}}"
+                    />
+                  </label>
+
+                  <label>
+                    {{../../labels.status}}
+                    <input
+                      type="number"
+                      class="faction-status-value"
+                      data-group-index="{{groupIndex}}"
+                      data-faction-index="{{factionIndex}}"
+                      value="{{faction.value}}"
+                      step="1"
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    class="faction-status-delete"
+                    data-group-index="{{groupIndex}}"
+                    data-faction-index="{{factionIndex}}"
+                    aria-label="{{../../labels.deleteFactionAria}}"
+                  >
+                    {{../../labels.deleteFaction}}
+                  </button>
+                </div>
+              {{/each}}
+            </div>
+          {{else}}
+            <p class="faction-status-empty">{{../labels.empty}}</p>
+          {{/if}}
+        </section>
+      {{/each}}
+    {{else}}
+      <p class="faction-status-empty">{{labels.emptyGroups}}</p>
+    {{/if}}
+  </section>
+</div>
