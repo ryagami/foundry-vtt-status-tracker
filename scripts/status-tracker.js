@@ -43,6 +43,10 @@ function debugLog(message, context = {}) {
   console.info(`${MODULE_ID} | ${message}`, context);
 }
 
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 function createUniqueName(existingNames, baseName) {
   const normalizedNames = new Set(
     existingNames
@@ -126,7 +130,7 @@ export async function setFactionGroups(actor, groups) {
 
 function getGroupUiState(actor) {
   const uiState = actor.getFlag(MODULE_ID, GROUP_UI_STATE_FLAG);
-  return foundry.utils.isObject(uiState) ? uiState : {};
+  return isPlainObject(uiState) ? uiState : {};
 }
 
 async function setGroupCollapsedState(actor, groupId, collapsed) {
@@ -250,81 +254,83 @@ function removeInjectedFactionTab(html) {
 }
 
 async function onRenderActorSheet(app, html) {
-  const actor = getSheetActor(app);
-  if (!actor || actor.type !== "character") return;
-  if (!canViewFactionTab(actor)) return;
+  try {
+    const actor = getSheetActor(app);
+    if (!actor || actor.type !== "character") return;
+    if (!canViewFactionTab(actor)) return;
 
-  const renderNonce = (_latestRenderByApp.get(app) ?? 0) + 1;
-  _latestRenderByApp.set(app, renderNonce);
+    const renderNonce = (_latestRenderByApp.get(app) ?? 0) + 1;
+    _latestRenderByApp.set(app, renderNonce);
 
-  // Ensure we never keep stale duplicate instances from previous render paths.
-  removeInjectedFactionTab(html);
+    // Ensure we never keep stale duplicate instances from previous render paths.
+    removeInjectedFactionTab(html);
 
-  const context = resolveSheetTabContext(html);
-  if (!context) {
-    debugLog("Skipping tab injection", {
-      reason: "no-tab-context",
-      actorId: actor.id,
-      sheetClass: app?.constructor?.name ?? "unknown"
-    });
-    return;
-  }
-
-  const { nav, tabContainer, navGroup } = context;
-
-  const groups = applyGroupUiState(getFactionGroups(actor), actor);
-  const editable = isSheetEditable(app, html);
-  const permissions = {
-    canManageStructure: canManageStructure(actor) && editable,
-    canEditValues: canEditFactionValues(actor) && editable
-  };
-
-  const tabAriaLabel = localize("tabAriaLabel", "Faction Status");
-  nav.append(`<a class='item' data-group='${navGroup}' data-tab='${TAB_KEY}' title='${tabAriaLabel}' aria-label='${tabAriaLabel}'><i class='fa-solid fa-layer-group'></i></a>`);
-
-  const tabHtml = await renderTemplate(`modules/${MODULE_ID}/templates/faction-status-tab.hbs`, {
-    groups,
-    permissions,
-    tabGroup: navGroup,
-    labels: {
-      header: localize("header", "Faction Status"),
-      groupsHeader: localize("groupsHeader", "Groups"),
-      groupName: localize("groupNameLabel", "Group Name"),
-      addGroup: localize("addGroup", "Add Group"),
-      actions: localize("actionsLabel", "Actions"),
-      toggleGroupAria: localize("toggleGroupAriaLabel", "Toggle group"),
-      factionCountLabel: localize("factionCountLabel", "Faction count"),
-      deleteGroup: localize("deleteGroupLabel", "Delete Group"),
-      deleteGroupAria: localize("deleteGroupAriaLabel", "Delete group"),
-      addFaction: localize("addFaction", "Add Faction"),
-      addFactionAria: localize("addFactionAriaLabel", "Add faction"),
-      name: localize("nameLabel", "Name"),
-      status: localize("statusLabel", "Status"),
-      decreaseStatusAria: localize("decreaseStatusAriaLabel", "Decrease status"),
-      increaseStatusAria: localize("increaseStatusAriaLabel", "Increase status"),
-      deleteFaction: localize("deleteLabel", "Delete"),
-      deleteFactionAria: localize("deleteAriaLabel", "Delete faction"),
-      empty: localize("emptyLabel", "No factions tracked yet."),
-      emptyGroups: localize("emptyGroupsLabel", "No groups created yet.")
+    const context = resolveSheetTabContext(html);
+    if (!context) {
+      debugLog("Skipping tab injection", {
+        reason: "no-tab-context",
+        actorId: actor.id,
+        sheetClass: app?.constructor?.name ?? "unknown"
+      });
+      return;
     }
-  });
 
-  // Abort if a newer render already started for this app (avoids async double-injection).
-  if (_latestRenderByApp.get(app) !== renderNonce) return;
+    const { nav, tabContainer, navGroup } = context;
 
-  tabContainer.append(tabHtml);
-  debugLog("Injected faction status tab", {
-    actorId: actor.id,
-    actorName: actor.name,
-    sheetClass: app?.constructor?.name ?? "unknown",
-    navGroup,
-    groups: groups.length
-  });
+    const groups = applyGroupUiState(getFactionGroups(actor), actor);
+    const editable = isSheetEditable(app, html);
+    const permissions = {
+      canManageStructure: canManageStructure(actor) && editable,
+      canEditValues: canEditFactionValues(actor) && editable
+    };
 
-  // Initialize tab switching using Foundry's public Tabs API
-  initializeTabSwitching(html, navGroup);
+    const tabAriaLabel = localize("tabAriaLabel", "Faction Status");
+    nav.append(`<a class='item' data-group='${navGroup}' data-tab='${TAB_KEY}' title='${tabAriaLabel}' aria-label='${tabAriaLabel}'><i class='fa-solid fa-layer-group'></i></a>`);
 
-  bindFactionStatusListeners(app, html, actor);
+    const tabHtml = await renderTemplate(`modules/${MODULE_ID}/templates/faction-status-tab.hbs`, {
+      groups,
+      permissions,
+      tabGroup: navGroup,
+      labels: {
+        header: localize("header", "Faction Status"),
+        groupsHeader: localize("groupsHeader", "Groups"),
+        groupName: localize("groupNameLabel", "Group Name"),
+        addGroup: localize("addGroup", "Add Group"),
+        actions: localize("actionsLabel", "Actions"),
+        toggleGroupAria: localize("toggleGroupAriaLabel", "Toggle group"),
+        factionCountLabel: localize("factionCountLabel", "Faction count"),
+        deleteGroup: localize("deleteGroupLabel", "Delete Group"),
+        deleteGroupAria: localize("deleteGroupAriaLabel", "Delete group"),
+        addFaction: localize("addFaction", "Add Faction"),
+        addFactionAria: localize("addFactionAriaLabel", "Add faction"),
+        name: localize("nameLabel", "Name"),
+        status: localize("statusLabel", "Status"),
+        decreaseStatusAria: localize("decreaseStatusAriaLabel", "Decrease status"),
+        increaseStatusAria: localize("increaseStatusAriaLabel", "Increase status"),
+        deleteFaction: localize("deleteLabel", "Delete"),
+        deleteFactionAria: localize("deleteAriaLabel", "Delete faction"),
+        empty: localize("emptyLabel", "No factions tracked yet."),
+        emptyGroups: localize("emptyGroupsLabel", "No groups created yet.")
+      }
+    });
+
+    // Abort if a newer render already started for this app (avoids async double-injection).
+    if (_latestRenderByApp.get(app) !== renderNonce) return;
+
+    tabContainer.append(tabHtml);
+    debugLog("Injected faction status tab", {
+      actorId: actor.id,
+      actorName: actor.name,
+      sheetClass: app?.constructor?.name ?? "unknown",
+      navGroup,
+      groups: groups.length
+    });
+
+    initializeTabSwitching(html, navGroup);
+    bindFactionStatusListeners(app, html, actor);
+  } catch (error) {
+    console.error(`${MODULE_ID} | Failed to render faction status tab`, error);
+  }
 }
 
 function initializeTabSwitching(html, navGroup) {
