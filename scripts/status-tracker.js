@@ -273,14 +273,41 @@ function resolveSheetTabContext(html) {
     const navGroup = nav.data("group") || nav.find("[data-group]").first().data("group") || "primary";
     debugLog("Found nav with group", { navGroup, tabLinkCount: tabLinks.length });
     
+    const tabIds = new Set(
+      tabLinks
+        .map((_, link) => String(link.dataset.tab ?? "").trim())
+        .get()
+        .filter(Boolean)
+    );
+    if (tabIds.size < 2) {
+      debugLog("Skipping: < 2 tab ids in nav", { navGroup, tabIds: tabIds.size });
+      continue;
+    }
+
     const groupTabs = html.find(`.tab[data-group='${navGroup}']`);
     if (groupTabs.length < 2) {
       debugLog("Skipping: < 2 tabs in group", { navGroup, groupTabs: groupTabs.length });
       continue;
     }
 
-    const tabContainer = groupTabs.first().parent().first();
-    if (tabContainer.length === 1) {
+    const parentCandidates = [];
+    groupTabs.each((_, tab) => {
+      const parent = tab.parentElement;
+      if (!parent) return;
+      if (!parentCandidates.includes(parent)) parentCandidates.push(parent);
+    });
+
+    let tabContainer = null;
+    for (const parent of parentCandidates) {
+      const tabsInParent = Array.from(parent.querySelectorAll(`:scope > .tab[data-group='${navGroup}']`));
+      const matching = tabsInParent.filter((tab) => tabIds.has(String(tab.dataset.tab ?? "")));
+      if (matching.length >= 2) {
+        tabContainer = $(parent);
+        break;
+      }
+    }
+
+    if (tabContainer?.length === 1) {
       debugLog("Resolved tab context", {
         strategy: "dom-nav-scan",
         navGroup,
@@ -424,7 +451,7 @@ async function onRenderActorSheet(app, html) {
       groups: groups.length
     });
 
-    initializeTabSwitching(html, navGroup, preferredTab);
+    initializeTabSwitching(html, nav, tabContainer, navGroup, preferredTab);
     bindTabPreferenceTracking(app, html, navGroup);
     bindFactionStatusListeners(app, html, actor);
   } catch (error) {
@@ -432,32 +459,36 @@ async function onRenderActorSheet(app, html) {
   }
 }
 
-function initializeTabSwitching(html, navGroup, preferredTab = TAB_KEY) {
+function initializeTabSwitching(html, nav, tabContainer, navGroup, preferredTab = TAB_KEY) {
   // Use Foundry's public Tabs class to manage tab switching for our injected tab
   try {
-    const hasPreferred = html.find(`nav[data-group="${navGroup}"] [data-tab="${preferredTab}"]`).length > 0;
+    const tabsBindingId = foundry.utils.randomID();
+    nav.attr("data-fst-tabs-nav", tabsBindingId);
+    tabContainer.attr("data-fst-tabs-container", tabsBindingId);
+
+    const hasPreferred = nav.find(`[data-tab="${preferredTab}"]`).length > 0;
     const initialTab = hasPreferred ? preferredTab : TAB_KEY;
     const tabs = new foundry.applications.ux.Tabs({
-      navSelector: `nav[data-group="${navGroup}"]`,
-      contentSelector: `.sheet-body, section.sheet-body, .tab-body, [class*="sheet-content"]`,
+      navSelector: `nav[data-fst-tabs-nav="${tabsBindingId}"]`,
+      contentSelector: `[data-fst-tabs-container="${tabsBindingId}"]`,
       initial: initialTab
     });
     tabs.bind(html[0]);
-    debugLog("Initialized tab switching", { navGroup, initialTab });
+    debugLog("Initialized tab switching", { navGroup, initialTab, tabsBindingId });
   } catch (error) {
     debugLog("Tab initialization warning (using fallback)", { error: error.message });
     // Fallback: manually handle tab switching
-    const navItem = html.find(`nav[data-group="${navGroup}"] a[data-tab="${TAB_KEY}"]`);
-    const tabContent = html.find(`.tab[data-group="${navGroup}"][data-tab="${TAB_KEY}"]`);
+    const navItem = nav.find(`a[data-tab="${TAB_KEY}"]`);
+    const tabContent = tabContainer.find(`.tab[data-group="${navGroup}"][data-tab="${TAB_KEY}"]`);
     
     if (navItem.length && tabContent.length) {
       navItem.on("click", (event) => {
         event.preventDefault();
         // Update active state of nav items in this group
-        html.find(`nav[data-group="${navGroup}"] a[data-tab]`).removeClass("active");
+        nav.find(`a[data-tab]`).removeClass("active");
         navItem.addClass("active");
         // Hide all tabs and show ours
-        html.find(`.tab[data-group="${navGroup}"]`).hide();
+        tabContainer.find(`.tab[data-group="${navGroup}"]`).hide();
         tabContent.show();
       });
     }
@@ -466,8 +497,8 @@ function initializeTabSwitching(html, navGroup, preferredTab = TAB_KEY) {
 
 function bindTabPreferenceTracking(app, html, navGroup) {
   const navSelector = `nav[data-group='${navGroup}'] [data-tab]`;
-  html.off("click", navSelector);
-  html.on("click", navSelector, (event) => {
+  html.off("click.fst-tab-pref", navSelector);
+  html.on("click.fst-tab-pref", navSelector, (event) => {
     const clickedTab = event.currentTarget.dataset.tab;
     if (!clickedTab) return;
     _preferredTabByApp.set(app, clickedTab);
