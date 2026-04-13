@@ -254,10 +254,15 @@ function resolveSheetTabContext(html) {
   });
 
   for (const element of navCandidates) {
-    const nav = html.find(element);
+    const nav = $(element);
     if (!nav.length) continue;
+    
     const tabLinks = nav.find("[data-tab]");
-    if (tabLinks.length < 2) continue;
+    if (tabLinks.length < 2) {
+      debugLog("Skipping nav with < 2 tabs", { tabLinks: tabLinks.length });
+      continue;
+    }
+    
     if (nav.find(`[data-tab='${TAB_KEY}']`).length) {
       debugLog("Tab already present in navigation", {
         strategy: "dom-nav-scan"
@@ -266,29 +271,57 @@ function resolveSheetTabContext(html) {
     }
 
     const navGroup = nav.data("group") || nav.find("[data-group]").first().data("group") || "primary";
-    const groupTabs = html.find(`.tab[data-group='${navGroup}']`);
-    if (groupTabs.length < 2) continue;
-    const existingTab = groupTabs.first();
-    const tabContainer = existingTab.parent();
+    debugLog("Found nav with group", { navGroup, tabLinkCount: tabLinks.length });
+    
+    // Find tabs that belong to this specific nav's group
+    // First, look for a tab container as a sibling or ancestor's sibling
+    let tabContainer = null;
+    
+    // Try to find the tab container by looking at siblings and following elements
+    let searchContext = nav.parent();
+    tabContainer = searchContext.find(`.tab[data-group='${navGroup}']`).parent().first();
+    
+    if (!tabContainer?.length) {
+      // Fallback: look in the entire sheet, but take the first result
+      const groupTabs = html.find(`.tab[data-group='${navGroup}']`);
+      if (groupTabs.length < 2) {
+        debugLog("Skipping: < 2 tabs in group", { navGroup, groupTabs: groupTabs.length });
+        continue;
+      }
+      const existingTab = groupTabs.first();
+      tabContainer = existingTab.parent();
+    }
 
-    if (tabContainer.length) {
+    if (tabContainer?.length) {
       debugLog("Resolved tab context", {
         strategy: "dom-nav-scan",
-        navGroup
+        navGroup,
+        containerClass: tabContainer.attr("class")
       });
       return { nav, tabContainer, navGroup };
     }
   }
 
   const fallbackNav = html.find("nav.tabs[data-group='primary'], nav.sheet-navigation.tabs, nav.sheet-tabs").first();
-  if (!fallbackNav.length || fallbackNav.find(`[data-tab='${TAB_KEY}']`).length) return null;
+  if (!fallbackNav.length) {
+    debugLog("No fallback nav found");
+    return null;
+  }
+  if (fallbackNav.find(`[data-tab='${TAB_KEY}']`).length) {
+    debugLog("Tab already present in fallback nav");
+    return null;
+  }
 
   const fallbackTabContainer = html.find(".sheet-body, section.sheet-body, .tab-body").first();
-  if (!fallbackTabContainer.length) return null;
+  if (!fallbackTabContainer.length) {
+    debugLog("No fallback tab container found");
+    return null;
+  }
 
   debugLog("Resolved tab context", {
     strategy: "fallback-primary",
-    navGroup: "primary"
+    navGroup: "primary",
+    containerClass: fallbackTabContainer.attr("class")
   });
   return { nav: fallbackNav, tabContainer: fallbackTabContainer, navGroup: "primary" };
 }
@@ -343,6 +376,13 @@ async function onRenderActorSheet(app, html) {
     };
 
     const tabAriaLabel = localize("tabAriaLabel", "Faction Status");
+    
+    // Ensure nav is a single element
+    if (nav.length > 1) {
+      console.warn(`${MODULE_ID} | Nav has ${nav.length} elements, using first one`);
+      nav = nav.first();
+    }
+    
     nav.append(`<a class='item' data-group='${navGroup}' data-tab='${TAB_KEY}' title='${tabAriaLabel}' aria-label='${tabAriaLabel}'><i class='fa-solid fa-layer-group'></i></a>`);
 
     const tabHtml = await renderTemplate(`modules/${MODULE_ID}/templates/faction-status-tab.hbs`, {
@@ -374,6 +414,17 @@ async function onRenderActorSheet(app, html) {
 
     // Abort if a newer render already started for this app (avoids async double-injection).
     if (_latestRenderByApp.get(app) !== renderNonce) return;
+
+    // Ensure we have a single element, not a collection
+    if (!tabContainer.length) {
+      console.error(`${MODULE_ID} | Tab container has no elements`);
+      return;
+    }
+    
+    if (tabContainer.length > 1) {
+      console.warn(`${MODULE_ID} | Tab container has ${tabContainer.length} elements, using first one`);
+      tabContainer = tabContainer.first();
+    }
 
     tabContainer.append(tabHtml);
     debugLog("Injected faction status tab", {
