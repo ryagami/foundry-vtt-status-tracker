@@ -1,5 +1,5 @@
 {
-  "foundry-vtt-status-tracker.tabLabel": "Faction Status",
+  "foundry-vtt-status-tracker.tabAriaLabel": "Faction Status",
   "foundry-vtt-status-tracker.header": "Faction Status",
   "foundry-vtt-status-tracker.groupsHeader": "Groups",
   "foundry-vtt-status-tracker.groupNameLabel": "Group Name",

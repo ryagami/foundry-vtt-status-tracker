@@ -224,13 +224,13 @@ async function onRenderActorSheet(app, html) {
   const { nav, tabContainer, navGroup } = context;
 
   const groups = getFactionGroups(actor);
-  const tabLabel = localize("tabLabel", "Faction Status");
   const permissions = {
     canManageStructure: canManageStructure(actor),
     canEditValues: canEditFactionValues(actor)
   };
 
-  nav.append(`<a class='item' data-group='${navGroup}' data-tab='${TAB_KEY}'>${tabLabel}</a>`);
+  const tabAriaLabel = localize("tabAriaLabel", "Faction Status");
+  nav.append(`<a class='item' data-group='${navGroup}' data-tab='${TAB_KEY}' title='${tabAriaLabel}' aria-label='${tabAriaLabel}'><i class='fa-solid fa-layer-group'></i></a>`);
 
   const tabHtml = await renderTemplate(`modules/${MODULE_ID}/templates/faction-status-tab.hbs`, {
     groups,

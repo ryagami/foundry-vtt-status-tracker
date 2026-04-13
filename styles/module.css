@@ -1,3 +1,18 @@
+/* Faction Status Tab Navigation Styling */
+a[data-tab="faction-status"] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1em;
+  width: 100%;
+  height: auto;
+  padding: 0.25rem;
+}
+
+a[data-tab="faction-status"] i {
+  font-size: 1.2em;
+}
+
 .faction-status-tab {
   display: flex;
   flex-direction: column;
