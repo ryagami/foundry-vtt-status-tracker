@@ -189,8 +189,8 @@ function canViewFactionTab(actor) {
 }
 
 function isSheetInEditMode(app, html) {
-  // dnd5e ApplicationV2 sheet: _mode === 1 is edit, _mode === 2 is play/view
-  if (typeof app?._mode === "number") return app._mode === 1;
+  // dnd5e PrimarySheet5e modes: PLAY=1, EDIT=2
+  if (typeof app?._mode === "number") return app._mode === 2;
   if (typeof app?.isEditing === "boolean") return app.isEditing;
   if (typeof app?.editMode === "boolean") return app.editMode;
 
@@ -368,7 +368,7 @@ async function onRenderActorSheet(app, html) {
     const editable = isSheetInEditMode(app, html);
     const permissions = {
       canManageStructure: canManageStructure(actor) && editable,
-      canEditValues: canEditFactionValues(actor) && editable
+      canEditValues: canEditFactionValues(actor) && !editable
     };
 
     const tabAriaLabel = localize("tabAriaLabel", "Faction Status");
@@ -473,7 +473,7 @@ function bindTabPreferenceTracking(app, html, navGroup) {
 function bindFactionStatusListeners(app, html, actor) {
   const selectorRoot = `.tab[data-tab='${TAB_KEY}']`;
   const canManage = () => canManageStructure(actor) && isSheetInEditMode(app, html);
-  const canEditValues = () => canEditFactionValues(actor) && isSheetInEditMode(app, html);
+  const canEditValues = () => canEditFactionValues(actor) && !isSheetInEditMode(app, html);
 
   html.off("click", `${selectorRoot} .faction-group-add-global`);
   html.on("click", `${selectorRoot} .faction-group-add-global`, async (event) => {
