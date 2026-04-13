@@ -2,7 +2,7 @@
   "id": "foundry-vtt-status-tracker",
   "title": "Faction Status Tracker",
   "description": "Adds a character sheet tab for tracking faction status values and faction groups.",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "authors": [
     {
       "name": "Stefan"
@@ -36,5 +36,5 @@
   ],
   "url": "https://github.com/ryagami/foundry-vtt-status-tracker",
   "manifest": "https://raw.githubusercontent.com/ryagami/foundry-vtt-status-tracker/main/module.json",
-  "download": "https://github.com/ryagami/foundry-vtt-status-tracker/archive/refs/heads/main.zip"
+  "download": "https://codeload.github.com/ryagami/foundry-vtt-status-tracker/zip/refs/heads/main"
 }
