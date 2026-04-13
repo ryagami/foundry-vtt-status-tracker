@@ -249,6 +249,32 @@ function isSupportedCharacterSheet(app) {
 }
 
 function resolveSheetTabContext(html) {
+  // dnd5e v5e sheets render primary tab content in .tab-body#tabs.
+  // Prefer this canonical container to avoid injecting into nested/secondary tab regions.
+  const canonicalNav = html.find("nav.tabs[data-group='primary'], nav.tabs-right[data-group='primary'], nav.tabs-left[data-group='primary']").first();
+  const canonicalContainer = html.find(".tab-body#tabs").first();
+  if (canonicalNav.length && canonicalContainer.length) {
+    const navTabIds = new Set(
+      canonicalNav
+        .find("[data-tab]")
+        .map((_, link) => String(link.dataset.tab ?? "").trim())
+        .get()
+        .filter(Boolean)
+    );
+    const matchingCanonicalTabs = canonicalContainer
+      .children(".tab[data-group='primary']")
+      .filter((_, tab) => navTabIds.has(String(tab.dataset.tab ?? "")));
+
+    if (matchingCanonicalTabs.length >= 2 && !canonicalNav.find(`[data-tab='${TAB_KEY}']`).length) {
+      debugLog("Resolved tab context", {
+        strategy: "canonical-dnd5e-tabs",
+        navGroup: "primary",
+        matchedTabs: matchingCanonicalTabs.length
+      });
+      return { nav: canonicalNav, tabContainer: canonicalContainer, navGroup: "primary" };
+    }
+  }
+
   const navCandidates = html.find("nav.tabs, nav.sheet-navigation.tabs, nav.sheet-tabs");
   debugLog("Resolving tab context", {
     navCandidates: navCandidates.length
