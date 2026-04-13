@@ -1,4 +1,5 @@
 *.zip
+!foundry-vtt-status-tracker.zip
 *.log
 .DS_Store
 Thumbs.db
