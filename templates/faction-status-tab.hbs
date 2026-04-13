@@ -1,15 +1,19 @@
 <div class="tab faction-status-tab" data-group="{{tabGroup}}" data-tab="faction-status">
   <section class="faction-status-header">
     <h3>{{labels.header}}</h3>
-    <button type="button" class="faction-group-add-global">{{labels.addGroup}}</button>
+    {{#if permissions.canManageStructure}}
+      <button type="button" class="faction-group-add-global">{{labels.addGroup}}</button>
+    {{/if}}
   </section>
 
   <section class="faction-status-list">
     {{#if groups.length}}
       {{#each groups as |group groupIndex|}}
-        <section class="faction-group-card" draggable="true" data-group-index="{{groupIndex}}">
+        <section class="faction-group-card" {{#if ../permissions.canManageStructure}}draggable="true"{{/if}} data-group-index="{{groupIndex}}">
           <div class="faction-group-header">
-            <span class="faction-drag-handle" aria-hidden="true"><i class="fas fa-grip-vertical"></i></span>
+            {{#if ../permissions.canManageStructure}}
+              <span class="faction-drag-handle" aria-hidden="true"><i class="fas fa-grip-vertical"></i></span>
+            {{/if}}
             <label>
               {{../labels.groupName}}
               <input
@@ -17,33 +21,38 @@
                 class="faction-group-name"
                 data-group-index="{{groupIndex}}"
                 value="{{group.name}}"
+                {{#unless ../permissions.canManageStructure}}disabled{{/unless}}
               />
             </label>
 
-            <div class="faction-group-actions">
-              <button
-                type="button"
-                class="faction-status-add"
-                data-group-index="{{groupIndex}}"
-              >
-                {{../labels.addFaction}}
-              </button>
-              <button
-                type="button"
-                class="faction-group-delete"
-                data-group-index="{{groupIndex}}"
-                aria-label="{{../labels.deleteGroupAria}}"
-              >
-                {{../labels.deleteGroup}}
-              </button>
-            </div>
+            {{#if ../permissions.canManageStructure}}
+              <div class="faction-group-actions">
+                <button
+                  type="button"
+                  class="faction-status-add"
+                  data-group-index="{{groupIndex}}"
+                >
+                  {{../labels.addFaction}}
+                </button>
+                <button
+                  type="button"
+                  class="faction-group-delete"
+                  data-group-index="{{groupIndex}}"
+                  aria-label="{{../labels.deleteGroupAria}}"
+                >
+                  {{../labels.deleteGroup}}
+                </button>
+              </div>
+            {{/if}}
           </div>
 
           {{#if group.factions.length}}
             <div class="faction-group-factions">
               {{#each group.factions as |faction factionIndex|}}
-                <div class="faction-status-row" draggable="true" data-group-index="{{groupIndex}}" data-faction-index="{{factionIndex}}">
-                  <span class="faction-drag-handle" aria-hidden="true"><i class="fas fa-grip-vertical"></i></span>
+                <div class="faction-status-row" {{#if ../../permissions.canManageStructure}}draggable="true"{{/if}} data-group-index="{{groupIndex}}" data-faction-index="{{factionIndex}}">
+                  {{#if ../../permissions.canManageStructure}}
+                    <span class="faction-drag-handle" aria-hidden="true"><i class="fas fa-grip-vertical"></i></span>
+                  {{/if}}
                   <label>
                     {{../../labels.name}}
                     <input
@@ -52,6 +61,7 @@
                       data-group-index="{{groupIndex}}"
                       data-faction-index="{{factionIndex}}"
                       value="{{faction.name}}"
+                      {{#unless ../../permissions.canManageStructure}}disabled{{/unless}}
                     />
                   </label>
 
@@ -64,18 +74,21 @@
                       data-faction-index="{{factionIndex}}"
                       value="{{faction.value}}"
                       step="1"
+                      {{#unless ../../permissions.canEditValues}}disabled{{/unless}}
                     />
                   </label>
 
-                  <button
-                    type="button"
-                    class="faction-status-delete"
-                    data-group-index="{{groupIndex}}"
-                    data-faction-index="{{factionIndex}}"
-                    aria-label="{{../../labels.deleteFactionAria}}"
-                  >
-                    {{../../labels.deleteFaction}}
-                  </button>
+                  {{#if ../../permissions.canManageStructure}}
+                    <button
+                      type="button"
+                      class="faction-status-delete"
+                      data-group-index="{{groupIndex}}"
+                      data-faction-index="{{factionIndex}}"
+                      aria-label="{{../../labels.deleteFactionAria}}"
+                    >
+                      {{../../labels.deleteFaction}}
+                    </button>
+                  {{/if}}
                 </div>
               {{/each}}
             </div>

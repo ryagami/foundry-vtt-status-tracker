@@ -13,6 +13,8 @@
   "foundry-vtt-status-tracker.deleteAriaLabel": "Delete faction",
   "foundry-vtt-status-tracker.emptyLabel": "No factions tracked yet.",
   "foundry-vtt-status-tracker.emptyGroupsLabel": "No groups created yet.",
+  "foundry-vtt-status-tracker.playerVisibilitySettingName": "Show Tab To Players",
+  "foundry-vtt-status-tracker.playerVisibilitySettingHint": "Allow players to see the Faction Status tab on character sheets they own and edit status values there.",
   "foundry-vtt-status-tracker.debugSettingName": "Enable Debug Logging",
   "foundry-vtt-status-tracker.debugSettingHint": "Logs sheet hook and tab injection diagnostics to the browser console for troubleshooting."
 }

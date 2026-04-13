@@ -3,6 +3,7 @@ const TAB_KEY = "faction-status";
 const DEFAULT_FACTION_NAME = "New Faction";
 const DEFAULT_GROUP_NAME = "New group";
 const DEBUG_SETTING_KEY = "debugLogging";
+const PLAYER_VISIBILITY_SETTING_KEY = "visibleToPlayers";
 let _dragState = null;
 const RENDER_HOOKS = [
   "renderActorSheet",
@@ -18,6 +19,15 @@ export function initFactionStatusTracker() {
     config: true,
     type: Boolean,
     default: false
+  });
+
+  game.settings.register(MODULE_ID, PLAYER_VISIBILITY_SETTING_KEY, {
+    name: `${MODULE_ID}.playerVisibilitySettingName`,
+    hint: `${MODULE_ID}.playerVisibilitySettingHint`,
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true
   });
 
   for (const hookName of RENDER_HOOKS) {
@@ -119,6 +129,24 @@ function localize(key, fallback) {
   return resolved && resolved !== `${MODULE_ID}.${key}` ? resolved : fallback;
 }
 
+function isPlayerVisibilityEnabled() {
+  return game.settings?.get?.(MODULE_ID, PLAYER_VISIBILITY_SETTING_KEY) === true;
+}
+
+function canManageStructure(actor) {
+  return game.user?.isGM === true;
+}
+
+function canEditFactionValues(actor) {
+  if (game.user?.isGM) return true;
+  return isPlayerVisibilityEnabled() && actor?.isOwner === true;
+}
+
+function canViewFactionTab(actor) {
+  if (game.user?.isGM) return true;
+  return isPlayerVisibilityEnabled() && actor?.isOwner === true;
+}
+
 function resolveSheetTabContext(app, html) {
   const navCandidates = html.find("nav.tabs, nav.sheet-navigation.tabs, nav.sheet-tabs");
   debugLog("Resolving tab context", {
@@ -207,7 +235,7 @@ function rebindSheetTabs(app, html, targetGroup) {
 async function onRenderActorSheet(app, html) {
   const actor = app?.actor ?? app?.object;
   if (!actor || actor.type !== "character") return;
-  if (!game.user?.isGM) return;
+  if (!canViewFactionTab(actor)) return;
 
   const context = resolveSheetTabContext(app, html);
   if (!context) {
@@ -223,11 +251,16 @@ async function onRenderActorSheet(app, html) {
 
   const groups = getFactionGroups(actor);
   const tabLabel = localize("tabLabel", "Faction Status");
+  const permissions = {
+    canManageStructure: canManageStructure(actor),
+    canEditValues: canEditFactionValues(actor)
+  };
 
   nav.append(`<a class='item' data-group='${navGroup}' data-tab='${TAB_KEY}'>${tabLabel}</a>`);
 
   const tabHtml = await renderTemplate(`modules/${MODULE_ID}/templates/faction-status-tab.hbs`, {
     groups,
+    permissions,
     tabGroup: navGroup,
     labels: {
       header: localize("header", "Faction Status"),
@@ -265,7 +298,7 @@ function bindFactionStatusListeners(app, html, actor) {
   html.off("click", `${selectorRoot} .faction-group-add-global`);
   html.on("click", `${selectorRoot} .faction-group-add-global`, async (event) => {
     event.preventDefault();
-    if (!game.user?.isGM) return;
+    if (!canManageStructure(actor)) return;
 
     const groups = getFactionGroups(actor);
     const newGroupName = createUniqueGroupName(groups.map((group) => group.name), DEFAULT_GROUP_NAME);
@@ -288,7 +321,7 @@ function bindFactionStatusListeners(app, html, actor) {
   html.off("click", `${selectorRoot} .faction-group-delete`);
   html.on("click", `${selectorRoot} .faction-group-delete`, async (event) => {
     event.preventDefault();
-    if (!game.user?.isGM) return;
+    if (!canManageStructure(actor)) return;
 
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     if (Number.isNaN(groupIndex)) return;
@@ -309,7 +342,7 @@ function bindFactionStatusListeners(app, html, actor) {
 
   html.off("change", `${selectorRoot} .faction-group-name`);
   html.on("change", `${selectorRoot} .faction-group-name`, async (event) => {
-    if (!game.user?.isGM) return;
+    if (!canManageStructure(actor)) return;
 
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     if (Number.isNaN(groupIndex)) return;
@@ -332,7 +365,7 @@ function bindFactionStatusListeners(app, html, actor) {
   html.off("click", `${selectorRoot} .faction-status-add`);
   html.on("click", `${selectorRoot} .faction-status-add`, async (event) => {
     event.preventDefault();
-    if (!game.user?.isGM) return;
+    if (!canManageStructure(actor)) return;
 
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     if (Number.isNaN(groupIndex)) return;
@@ -363,7 +396,7 @@ function bindFactionStatusListeners(app, html, actor) {
   html.off("click", `${selectorRoot} .faction-status-delete`);
   html.on("click", `${selectorRoot} .faction-status-delete`, async (event) => {
     event.preventDefault();
-    if (!game.user?.isGM) return;
+    if (!canManageStructure(actor)) return;
 
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     const factionIndex = Number.parseInt(event.currentTarget.dataset.factionIndex, 10);
@@ -389,7 +422,7 @@ function bindFactionStatusListeners(app, html, actor) {
 
   html.off("change", `${selectorRoot} .faction-status-name`);
   html.on("change", `${selectorRoot} .faction-status-name`, async (event) => {
-    if (!game.user?.isGM) return;
+    if (!canManageStructure(actor)) return;
 
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     const factionIndex = Number.parseInt(event.currentTarget.dataset.factionIndex, 10);
@@ -416,7 +449,7 @@ function bindFactionStatusListeners(app, html, actor) {
 
   html.off("change", `${selectorRoot} .faction-status-value`);
   html.on("change", `${selectorRoot} .faction-status-value`, async (event) => {
-    if (!game.user?.isGM) return;
+    if (!canEditFactionValues(actor)) return;
 
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     const factionIndex = Number.parseInt(event.currentTarget.dataset.factionIndex, 10);
@@ -445,6 +478,8 @@ function bindFactionStatusListeners(app, html, actor) {
 }
 
 function bindDragAndDropListeners(app, html, actor) {
+  if (!canManageStructure(actor)) return;
+
   const selectorRoot = `.tab[data-tab='${TAB_KEY}']`;
 
   html.off("dragstart", `${selectorRoot} .faction-group-card`);
@@ -492,7 +527,7 @@ function bindDragAndDropListeners(app, html, actor) {
     event.preventDefault();
     event.stopImmediatePropagation();
     event.currentTarget.classList.remove("drag-over");
-    if (_dragState?.kind !== "faction" || !game.user?.isGM) {
+    if (_dragState?.kind !== "faction" || !canManageStructure(actor)) {
       _dragState = null;
       return;
     }
@@ -532,7 +567,7 @@ function bindDragAndDropListeners(app, html, actor) {
   html.on("drop", `${selectorRoot} .faction-group-card`, async (event) => {
     event.preventDefault();
     event.currentTarget.classList.remove("drag-over");
-    if (!_dragState || !game.user?.isGM) {
+    if (!_dragState || !canManageStructure(actor)) {
       _dragState = null;
       return;
     }
