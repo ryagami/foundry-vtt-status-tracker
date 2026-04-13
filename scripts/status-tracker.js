@@ -5,6 +5,7 @@ const DEFAULT_GROUP_NAME = "New group";
 const DEBUG_SETTING_KEY = "debugLogging";
 const PLAYER_VISIBILITY_SETTING_KEY = "visibleToPlayers";
 let _dragState = null;
+const _latestRenderByApp = new WeakMap();
 
 export function initFactionStatusTracker() {
   game.settings.register(MODULE_ID, DEBUG_SETTING_KEY, {
@@ -206,10 +207,21 @@ function onRenderApplicationV2(app, element) {
   void onRenderActorSheet(app, html);
 }
 
+function removeInjectedFactionTab(html) {
+  html.find(`nav [data-tab='${TAB_KEY}']`).remove();
+  html.find(`.tab[data-tab='${TAB_KEY}']`).remove();
+}
+
 async function onRenderActorSheet(app, html) {
   const actor = getSheetActor(app);
   if (!actor || actor.type !== "character") return;
   if (!canViewFactionTab(actor)) return;
+
+  const renderNonce = (_latestRenderByApp.get(app) ?? 0) + 1;
+  _latestRenderByApp.set(app, renderNonce);
+
+  // Ensure we never keep stale duplicate instances from previous render paths.
+  removeInjectedFactionTab(html);
 
   const context = resolveSheetTabContext(html);
   if (!context) {
@@ -252,6 +264,9 @@ async function onRenderActorSheet(app, html) {
       emptyGroups: localize("emptyGroupsLabel", "No groups created yet.")
     }
   });
+
+  // Abort if a newer render already started for this app (avoids async double-injection).
+  if (_latestRenderByApp.get(app) !== renderNonce) return;
 
   tabContainer.append(tabHtml);
   debugLog("Injected faction status tab", {
