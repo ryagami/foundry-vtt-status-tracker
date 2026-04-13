@@ -706,11 +706,15 @@ function bindDragAndDropListeners(app, html, actor, canManage = () => canManageS
   html.on("dragstart", `${selectorRoot} .faction-group-card`, (event) => {
     if (event.target.closest("input, button, a, select, textarea")) return;
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
-    if (Number.isNaN(groupIndex)) return;
+    if (Number.isNaN(groupIndex)) {
+      console.warn(`${MODULE_ID} | Invalid group index in dragstart`);
+      return;
+    }
     const dragData = { kind: "group", groupIndex };
     event.originalEvent.dataTransfer.effectAllowed = "move";
     event.originalEvent.dataTransfer.setData("application/json", JSON.stringify(dragData));
     event.currentTarget.classList.add("dragging");
+    console.debug(`${MODULE_ID} | Group drag started:`, dragData);
     event.stopImmediatePropagation();
   });
 
@@ -719,11 +723,15 @@ function bindDragAndDropListeners(app, html, actor, canManage = () => canManageS
     if (event.target.closest("input, button, a, select, textarea")) return;
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     const factionIndex = Number.parseInt(event.currentTarget.dataset.factionIndex, 10);
-    if (Number.isNaN(groupIndex) || Number.isNaN(factionIndex)) return;
+    if (Number.isNaN(groupIndex) || Number.isNaN(factionIndex)) {
+      console.warn(`${MODULE_ID} | Invalid indices in dragstart`, { groupIndex, factionIndex });
+      return;
+    }
     const dragData = { kind: "faction", groupIndex, factionIndex };
     event.originalEvent.dataTransfer.effectAllowed = "move";
     event.originalEvent.dataTransfer.setData("application/json", JSON.stringify(dragData));
     event.currentTarget.classList.add("dragging");
+    console.debug(`${MODULE_ID} | Faction drag started:`, dragData);
     event.stopImmediatePropagation();
   });
 
@@ -736,6 +744,7 @@ function bindDragAndDropListeners(app, html, actor, canManage = () => canManageS
       return;
     }
     event.preventDefault();
+    event.originalEvent.dataTransfer.dropEffect = "move";
     event.stopImmediatePropagation();
     html.find(".drag-over").removeClass("drag-over");
     event.currentTarget.classList.add("drag-over");
@@ -751,6 +760,7 @@ function bindDragAndDropListeners(app, html, actor, canManage = () => canManageS
       return;
     }
     event.preventDefault();
+    event.originalEvent.dataTransfer.dropEffect = "move";
     html.find(".drag-over").removeClass("drag-over");
     event.currentTarget.classList.add("drag-over");
   });
@@ -760,38 +770,80 @@ function bindDragAndDropListeners(app, html, actor, canManage = () => canManageS
     event.preventDefault();
     event.stopImmediatePropagation();
     event.currentTarget.classList.remove("drag-over");
+    event.originalEvent.dataTransfer.dropEffect = "move";
     
-    if (!canManage()) return;
-    
-    let dragData;
-    try {
-      dragData = JSON.parse(event.originalEvent.dataTransfer.getData("application/json") || "{}");
-    } catch (e) {
+    if (!canManage()) {
+      console.warn(`${MODULE_ID} | User cannot manage structure`);
       return;
     }
     
-    if (dragData.kind !== "faction") return;
+    let dragData;
+    try {
+      const rawData = event.originalEvent.dataTransfer.getData("application/json");
+      if (!rawData) {
+        console.warn(`${MODULE_ID} | No drag data in drop event`);
+        return;
+      }
+      dragData = JSON.parse(rawData);
+    } catch (e) {
+      console.error(`${MODULE_ID} | Failed to parse drag data:`, e);
+      return;
+    }
+    
+    console.debug(`${MODULE_ID} | Drop event with dragData:`, dragData);
+    
+    if (dragData.kind !== "faction") {
+      console.debug(`${MODULE_ID} | Ignoring drop: not a faction (kind: ${dragData.kind})`);
+      return;
+    }
 
     const targetGroupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     const targetFactionIndex = Number.parseInt(event.currentTarget.dataset.factionIndex, 10);
-    if (Number.isNaN(targetGroupIndex) || Number.isNaN(targetFactionIndex)) return;
+    if (Number.isNaN(targetGroupIndex) || Number.isNaN(targetFactionIndex)) {
+      console.warn(`${MODULE_ID} | Invalid target indices`, { targetGroupIndex, targetFactionIndex });
+      return;
+    }
 
     const { groupIndex: srcGroupIndex, factionIndex: srcFactionIndex } = dragData;
 
-    if (srcGroupIndex === targetGroupIndex && srcFactionIndex === targetFactionIndex) return;
+    if (srcGroupIndex === targetGroupIndex && srcFactionIndex === targetFactionIndex) {
+      console.debug(`${MODULE_ID} | Drop on same faction, ignoring`);
+      return;
+    }
 
     try {
+      console.debug(`${MODULE_ID} | Reordering faction from [${srcGroupIndex},${srcFactionIndex}] to [${targetGroupIndex},${targetFactionIndex}]`);
       await enqueueActorMutation(actor.id, async () => {
         const groups = getFactionGroups(actor);
         mergePendingNames(html, groups);
-        if (srcGroupIndex < 0 || srcGroupIndex >= groups.length) return;
-        if (targetGroupIndex < 0 || targetGroupIndex >= groups.length) return;
+        
+        if (srcGroupIndex < 0 || srcGroupIndex >= groups.length) {
+          console.warn(`${MODULE_ID} | Source group index out of bounds:`, srcGroupIndex);
+          return;
+        }
+        if (targetGroupIndex < 0 || targetGroupIndex >= groups.length) {
+          console.warn(`${MODULE_ID} | Target group index out of bounds:`, targetGroupIndex);
+          return;
+        }
+        
         const srcFactions = groups[srcGroupIndex].factions;
         const targetFactions = groups[targetGroupIndex].factions;
-        if (srcFactionIndex < 0 || srcFactionIndex >= srcFactions.length) return;
-        if (targetFactionIndex < 0 || targetFactionIndex >= targetFactions.length) return;
+        
+        if (srcFactionIndex < 0 || srcFactionIndex >= srcFactions.length) {
+          console.warn(`${MODULE_ID} | Source faction index out of bounds in group ${srcGroupIndex}`);
+          return;
+        }
+        if (targetFactionIndex < 0 || targetFactionIndex >= targetFactions.length) {
+          console.warn(`${MODULE_ID} | Target faction index out of bounds in group ${targetGroupIndex}`);
+          return;
+        }
+        
         const [movedFaction] = srcFactions.splice(srcFactionIndex, 1);
-        if (!movedFaction) return;
+        if (!movedFaction) {
+          console.warn(`${MODULE_ID} | Failed to extract faction at [${srcGroupIndex},${srcFactionIndex}]`);
+          return;
+        }
+        
         const adjustedTarget = (srcGroupIndex === targetGroupIndex && srcFactionIndex < targetFactionIndex)
           ? targetFactionIndex - 1
           : targetFactionIndex;
@@ -808,6 +860,7 @@ function bindDragAndDropListeners(app, html, actor, canManage = () => canManageS
       });
       _preferredTabByApp.set(app, TAB_KEY);
       app.render(true);
+      console.log(`${MODULE_ID} | Successfully reordered faction`);
     } catch (error) {
       console.error(`${MODULE_ID} | Failed reordering faction`, error);
     }
@@ -817,19 +870,38 @@ function bindDragAndDropListeners(app, html, actor, canManage = () => canManageS
   html.on("drop", `${selectorRoot} .faction-group-card`, async (event) => {
     event.preventDefault();
     event.currentTarget.classList.remove("drag-over");
-    if (!canManage()) return;
+    event.originalEvent.dataTransfer.dropEffect = "move";
+    
+    if (!canManage()) {
+      console.warn(`${MODULE_ID} | User cannot manage structure`);
+      return;
+    }
 
     let dragData;
     try {
-      dragData = JSON.parse(event.originalEvent.dataTransfer.getData("application/json") || "{}");
+      const rawData = event.originalEvent.dataTransfer.getData("application/json");
+      if (!rawData) {
+        console.warn(`${MODULE_ID} | No drag data in drop event`);
+        return;
+      }
+      dragData = JSON.parse(rawData);
     } catch (e) {
+      console.error(`${MODULE_ID} | Failed to parse drag data:`, e);
       return;
     }
     
-    if (!dragData.kind) return;
+    console.debug(`${MODULE_ID} | Drop on group card with dragData:`, dragData);
+    
+    if (!dragData.kind) {
+      console.debug(`${MODULE_ID} | Ignoring drop: no kind`);
+      return;
+    }
 
     const targetGroupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
-    if (Number.isNaN(targetGroupIndex)) return;
+    if (Number.isNaN(targetGroupIndex)) {
+      console.warn(`${MODULE_ID} | Invalid target group index:`, targetGroupIndex);
+      return;
+    }
 
     const { kind: dragKind, groupIndex: srcGroupIndex, factionIndex: srcFactionIndex } = dragData;
 
@@ -837,27 +909,61 @@ function bindDragAndDropListeners(app, html, actor, canManage = () => canManageS
       await enqueueActorMutation(actor.id, async () => {
         const groups = getFactionGroups(actor);
         mergePendingNames(html, groups);
-        if (targetGroupIndex < 0 || targetGroupIndex >= groups.length) return;
+        
+        if (targetGroupIndex < 0 || targetGroupIndex >= groups.length) {
+          console.warn(`${MODULE_ID} | Target group index out of bounds:`, targetGroupIndex);
+          return;
+        }
 
         if (dragKind === "group") {
-          if (srcGroupIndex < 0 || srcGroupIndex >= groups.length) return;
-          if (srcGroupIndex === targetGroupIndex) return;
+          if (srcGroupIndex < 0 || srcGroupIndex >= groups.length) {
+            console.warn(`${MODULE_ID} | Source group index out of bounds:`, srcGroupIndex);
+            return;
+          }
+          if (srcGroupIndex === targetGroupIndex) {
+            console.debug(`${MODULE_ID} | Drop on same group, ignoring`);
+            return;
+          }
+          
           const [movedGroup] = groups.splice(srcGroupIndex, 1);
-          if (!movedGroup) return;
+          if (!movedGroup) {
+            console.warn(`${MODULE_ID} | Failed to extract group at ${srcGroupIndex}`);
+            return;
+          }
+          
           const adjustedTarget = srcGroupIndex < targetGroupIndex ? targetGroupIndex - 1 : targetGroupIndex;
           groups.splice(adjustedTarget, 0, movedGroup);
           await setFactionGroups(actor, groups);
           debugLog("Reordered group", { actorId: actor.id, actorName: actor.name, from: srcGroupIndex, to: adjustedTarget });
+          console.log(`${MODULE_ID} | Successfully reordered group from ${srcGroupIndex} to ${adjustedTarget}`);
         } else if (dragKind === "faction") {
-          if (srcGroupIndex < 0 || srcGroupIndex >= groups.length) return;
-          if (srcGroupIndex === targetGroupIndex) return;
+          if (srcGroupIndex < 0 || srcGroupIndex >= groups.length) {
+            console.warn(`${MODULE_ID} | Source group index out of bounds:`, srcGroupIndex);
+            return;
+          }
+          if (srcGroupIndex === targetGroupIndex) {
+            console.debug(`${MODULE_ID} | Drop in same group, ignoring`);
+            return;
+          }
+          
           const srcFactions = groups[srcGroupIndex].factions;
-          if (srcFactionIndex < 0 || srcFactionIndex >= srcFactions.length) return;
+          if (srcFactionIndex < 0 || srcFactionIndex >= srcFactions.length) {
+            console.warn(`${MODULE_ID} | Source faction index out of bounds in group ${srcGroupIndex}`);
+            return;
+          }
+          
           const [movedFaction] = srcFactions.splice(srcFactionIndex, 1);
-          if (!movedFaction) return;
+          if (!movedFaction) {
+            console.warn(`${MODULE_ID} | Failed to extract faction at [${srcGroupIndex},${srcFactionIndex}]`);
+            return;
+          }
+          
           groups[targetGroupIndex].factions.push(movedFaction);
           await setFactionGroups(actor, groups);
           debugLog("Moved faction to group", { actorId: actor.id, actorName: actor.name, srcGroupIndex, srcFactionIndex, targetGroupIndex });
+          console.log(`${MODULE_ID} | Successfully moved faction to group ${targetGroupIndex}`);
+        } else {
+          console.debug(`${MODULE_ID} | Unknown drag kind: ${dragKind}`);
         }
       });
       _preferredTabByApp.set(app, TAB_KEY);
@@ -869,6 +975,7 @@ function bindDragAndDropListeners(app, html, actor, canManage = () => canManageS
 
   html.off("dragend", `${selectorRoot} .faction-group-card, ${selectorRoot} .faction-status-row`);
   html.on("dragend", `${selectorRoot} .faction-group-card, ${selectorRoot} .faction-status-row`, () => {
+    console.debug(`${MODULE_ID} | Drag ended`);
     html.find(".dragging, .drag-over").removeClass("dragging drag-over");
   });
 }
