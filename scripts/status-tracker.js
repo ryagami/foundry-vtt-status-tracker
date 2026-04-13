@@ -262,7 +262,40 @@ async function onRenderActorSheet(app, html) {
     groups: groups.length
   });
 
+  // Initialize tab switching using Foundry's public Tabs API
+  initializeTabSwitching(html, navGroup);
+
   bindFactionStatusListeners(app, html, actor);
+}
+
+function initializeTabSwitching(html, navGroup) {
+  // Use Foundry's public Tabs class to manage tab switching for our injected tab
+  try {
+    const tabs = new foundry.applications.ux.Tabs({
+      navSelector: `nav[data-group="${navGroup}"]`,
+      contentSelector: `.sheet-body, section.sheet-body, .tab-body, [class*="sheet-content"]`,
+      initial: TAB_KEY
+    });
+    tabs.bind(html[0]);
+    debugLog("Initialized tab switching", { navGroup, tabKey: TAB_KEY });
+  } catch (error) {
+    debugLog("Tab initialization warning (using fallback)", { error: error.message });
+    // Fallback: manually handle tab switching
+    const navItem = html.find(`nav[data-group="${navGroup}"] a[data-tab="${TAB_KEY}"]`);
+    const tabContent = html.find(`.tab[data-group="${navGroup}"][data-tab="${TAB_KEY}"]`);
+    
+    if (navItem.length && tabContent.length) {
+      navItem.on("click", (event) => {
+        event.preventDefault();
+        // Update active state of nav items in this group
+        html.find(`nav[data-group="${navGroup}"] a[data-tab]`).removeClass("active");
+        navItem.addClass("active");
+        // Hide all tabs and show ours
+        html.find(`.tab[data-group="${navGroup}"]`).hide();
+        tabContent.show();
+      });
+    }
+  }
 }
 
 function bindFactionStatusListeners(app, html, actor) {
