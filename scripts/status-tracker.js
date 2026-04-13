@@ -179,10 +179,43 @@ function canViewFactionTab(actor) {
   return isPlayerVisibilityEnabled() && actor?.isOwner === true;
 }
 
-function isSheetEditable(app, html) {
+function isSheetInEditMode(app, html) {
+  if (typeof app?.isEditing === "boolean") return app.isEditing;
+  if (typeof app?.editMode === "boolean") return app.editMode;
+
+  const editToggle = html.find("[data-action='toggleEditMode'], [data-action='toggle-edit-mode'], .toggle-edit-mode").first();
+  if (editToggle.length) {
+    const ariaPressed = editToggle.attr("aria-pressed");
+    if (ariaPressed === "true") return true;
+    if (ariaPressed === "false") return false;
+    if (editToggle.hasClass("active")) return true;
+  }
+
+  const probeField = html
+    .find(`.tab:not([data-tab='${TAB_KEY}']) input[name], .tab:not([data-tab='${TAB_KEY}']) textarea[name], .tab:not([data-tab='${TAB_KEY}']) select[name]`)
+    .first();
+
+  if (probeField.length) {
+    const disabled = probeField.prop("disabled") === true;
+    const readonly = probeField.prop("readOnly") === true;
+    return !disabled && !readonly;
+  }
+
   if (typeof app?.isEditable === "boolean") return app.isEditable;
   if (typeof app?.options?.editable === "boolean") return app.options.editable;
-  return html.hasClass("editable") || html.find("form.editable").length > 0;
+  return false;
+}
+
+function mergePendingGroupNames(html, groups) {
+  const selectorRoot = `.tab[data-tab='${TAB_KEY}'] .faction-group-name`;
+  html.find(selectorRoot).each((_, element) => {
+    const index = Number.parseInt(element.dataset.groupIndex, 10);
+    if (Number.isNaN(index) || index < 0 || index >= groups.length) return;
+
+    const pendingName = String(element.value ?? "").trim();
+    if (!pendingName) return;
+    groups[index].name = pendingName;
+  });
 }
 
 function getSheetActor(app) {
@@ -278,7 +311,7 @@ async function onRenderActorSheet(app, html) {
     const { nav, tabContainer, navGroup } = context;
 
     const groups = applyGroupUiState(getFactionGroups(actor), actor);
-    const editable = isSheetEditable(app, html);
+    const editable = isSheetInEditMode(app, html);
     const permissions = {
       canManageStructure: canManageStructure(actor) && editable,
       canEditValues: canEditFactionValues(actor) && editable
@@ -365,8 +398,8 @@ function initializeTabSwitching(html, navGroup) {
 
 function bindFactionStatusListeners(app, html, actor) {
   const selectorRoot = `.tab[data-tab='${TAB_KEY}']`;
-  const canManage = () => canManageStructure(actor) && isSheetEditable(app, html);
-  const canEditValues = () => canEditFactionValues(actor) && isSheetEditable(app, html);
+  const canManage = () => canManageStructure(actor) && isSheetInEditMode(app, html);
+  const canEditValues = () => canEditFactionValues(actor) && isSheetInEditMode(app, html);
 
   html.off("click", `${selectorRoot} .faction-group-add-global`);
   html.on("click", `${selectorRoot} .faction-group-add-global`, async (event) => {
@@ -400,6 +433,7 @@ function bindFactionStatusListeners(app, html, actor) {
     if (Number.isNaN(groupIndex)) return;
 
     const groups = getFactionGroups(actor);
+    mergePendingGroupNames(html, groups);
     if (groupIndex < 0 || groupIndex >= groups.length) return;
 
     groups.splice(groupIndex, 1);
@@ -460,6 +494,7 @@ function bindFactionStatusListeners(app, html, actor) {
     if (Number.isNaN(groupIndex)) return;
 
     const groups = getFactionGroups(actor);
+    mergePendingGroupNames(html, groups);
     if (groupIndex < 0 || groupIndex >= groups.length) return;
 
     const factions = groups[groupIndex].factions;
@@ -492,6 +527,7 @@ function bindFactionStatusListeners(app, html, actor) {
     if (Number.isNaN(groupIndex) || Number.isNaN(factionIndex)) return;
 
     const groups = getFactionGroups(actor);
+    mergePendingGroupNames(html, groups);
     if (groupIndex < 0 || groupIndex >= groups.length) return;
 
     const factions = groups[groupIndex].factions;
@@ -602,14 +638,14 @@ function bindFactionStatusListeners(app, html, actor) {
   bindDragAndDropListeners(app, html, actor, canManage);
 }
 
-function bindDragAndDropListeners(app, html, actor, canManage = () => canManageStructure(actor) && isSheetEditable(app, html)) {
+function bindDragAndDropListeners(app, html, actor, canManage = () => canManageStructure(actor) && isSheetInEditMode(app, html)) {
   if (!canManage()) return;
 
   const selectorRoot = `.tab[data-tab='${TAB_KEY}']`;
 
   html.off("dragstart", `${selectorRoot} .faction-group-card`);
   html.on("dragstart", `${selectorRoot} .faction-group-card`, (event) => {
-    if (!event.target.closest(".faction-drag-handle")) return;
+    if (event.target.closest("input, button, a, select, textarea")) return;
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     if (Number.isNaN(groupIndex)) return;
     _dragState = { kind: "group", groupIndex };
@@ -621,7 +657,7 @@ function bindDragAndDropListeners(app, html, actor, canManage = () => canManageS
 
   html.off("dragstart", `${selectorRoot} .faction-status-row`);
   html.on("dragstart", `${selectorRoot} .faction-status-row`, (event) => {
-    if (!event.target.closest(".faction-drag-handle")) return;
+    if (event.target.closest("input, button, a, select, textarea")) return;
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     const factionIndex = Number.parseInt(event.currentTarget.dataset.factionIndex, 10);
     if (Number.isNaN(groupIndex) || Number.isNaN(factionIndex)) return;
@@ -672,6 +708,7 @@ function bindDragAndDropListeners(app, html, actor, canManage = () => canManageS
     if (srcGroupIndex === targetGroupIndex && srcFactionIndex === targetFactionIndex) return;
 
     const groups = getFactionGroups(actor);
+    mergePendingGroupNames(html, groups);
     const [movedFaction] = groups[srcGroupIndex].factions.splice(srcFactionIndex, 1);
     const adjustedTarget = (srcGroupIndex === targetGroupIndex && srcFactionIndex < targetFactionIndex)
       ? targetFactionIndex - 1
@@ -706,6 +743,7 @@ function bindDragAndDropListeners(app, html, actor, canManage = () => canManageS
     }
 
     const groups = getFactionGroups(actor);
+    mergePendingGroupNames(html, groups);
 
     if (_dragState.kind === "group") {
       const srcGroupIndex = _dragState.groupIndex;
