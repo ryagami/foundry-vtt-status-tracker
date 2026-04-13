@@ -144,6 +144,12 @@ function canViewFactionTab(actor) {
   return isPlayerVisibilityEnabled() && actor?.isOwner === true;
 }
 
+function isSheetEditable(app, html) {
+  if (typeof app?.isEditable === "boolean") return app.isEditable;
+  if (typeof app?.options?.editable === "boolean") return app.options.editable;
+  return html.hasClass("editable") || html.find("form.editable").length > 0;
+}
+
 function getSheetActor(app) {
   const actor = app?.actor ?? app?.object ?? app?.document;
   return actor?.documentName === "Actor" ? actor : null;
@@ -236,9 +242,10 @@ async function onRenderActorSheet(app, html) {
   const { nav, tabContainer, navGroup } = context;
 
   const groups = getFactionGroups(actor);
+  const editable = isSheetEditable(app, html);
   const permissions = {
-    canManageStructure: canManageStructure(actor),
-    canEditValues: canEditFactionValues(actor)
+    canManageStructure: canManageStructure(actor) && editable,
+    canEditValues: canEditFactionValues(actor) && editable
   };
 
   const tabAriaLabel = localize("tabAriaLabel", "Faction Status");
@@ -321,11 +328,13 @@ function initializeTabSwitching(html, navGroup) {
 
 function bindFactionStatusListeners(app, html, actor) {
   const selectorRoot = `.tab[data-tab='${TAB_KEY}']`;
+  const canManage = () => canManageStructure(actor) && isSheetEditable(app, html);
+  const canEditValues = () => canEditFactionValues(actor) && isSheetEditable(app, html);
 
   html.off("click", `${selectorRoot} .faction-group-add-global`);
   html.on("click", `${selectorRoot} .faction-group-add-global`, async (event) => {
     event.preventDefault();
-    if (!canManageStructure(actor)) return;
+    if (!canManage()) return;
 
     const groups = getFactionGroups(actor);
     const newGroupName = createUniqueGroupName(groups.map((group) => group.name), DEFAULT_GROUP_NAME);
@@ -348,7 +357,7 @@ function bindFactionStatusListeners(app, html, actor) {
   html.off("click", `${selectorRoot} .faction-group-delete`);
   html.on("click", `${selectorRoot} .faction-group-delete`, async (event) => {
     event.preventDefault();
-    if (!canManageStructure(actor)) return;
+    if (!canManage()) return;
 
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     if (Number.isNaN(groupIndex)) return;
@@ -379,7 +388,7 @@ function bindFactionStatusListeners(app, html, actor) {
 
   html.off("change", `${selectorRoot} .faction-group-name`);
   html.on("change", `${selectorRoot} .faction-group-name`, async (event) => {
-    if (!canManageStructure(actor)) return;
+    if (!canManage()) return;
 
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     if (Number.isNaN(groupIndex)) return;
@@ -402,7 +411,7 @@ function bindFactionStatusListeners(app, html, actor) {
   html.off("click", `${selectorRoot} .faction-status-add`);
   html.on("click", `${selectorRoot} .faction-status-add`, async (event) => {
     event.preventDefault();
-    if (!canManageStructure(actor)) return;
+    if (!canManage()) return;
 
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     if (Number.isNaN(groupIndex)) return;
@@ -433,7 +442,7 @@ function bindFactionStatusListeners(app, html, actor) {
   html.off("click", `${selectorRoot} .faction-status-delete`);
   html.on("click", `${selectorRoot} .faction-status-delete`, async (event) => {
     event.preventDefault();
-    if (!canManageStructure(actor)) return;
+    if (!canManage()) return;
 
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     const factionIndex = Number.parseInt(event.currentTarget.dataset.factionIndex, 10);
@@ -459,7 +468,7 @@ function bindFactionStatusListeners(app, html, actor) {
 
   html.off("change", `${selectorRoot} .faction-status-name`);
   html.on("change", `${selectorRoot} .faction-status-name`, async (event) => {
-    if (!canManageStructure(actor)) return;
+    if (!canManage()) return;
 
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     const factionIndex = Number.parseInt(event.currentTarget.dataset.factionIndex, 10);
@@ -486,7 +495,7 @@ function bindFactionStatusListeners(app, html, actor) {
 
   html.off("change", `${selectorRoot} .faction-status-value`);
   html.on("change", `${selectorRoot} .faction-status-value`, async (event) => {
-    if (!canEditFactionValues(actor)) return;
+    if (!canEditValues()) return;
 
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     const factionIndex = Number.parseInt(event.currentTarget.dataset.factionIndex, 10);
@@ -514,7 +523,7 @@ function bindFactionStatusListeners(app, html, actor) {
   html.off("click", `${selectorRoot} .faction-status-step`);
   html.on("click", `${selectorRoot} .faction-status-step`, async (event) => {
     event.preventDefault();
-    if (!canEditFactionValues(actor)) return;
+    if (!canEditValues()) return;
 
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     const factionIndex = Number.parseInt(event.currentTarget.dataset.factionIndex, 10);
@@ -547,33 +556,35 @@ function bindFactionStatusListeners(app, html, actor) {
     });
   });
 
-  bindDragAndDropListeners(app, html, actor);
+  bindDragAndDropListeners(app, html, actor, canManage);
 }
 
-function bindDragAndDropListeners(app, html, actor) {
-  if (!canManageStructure(actor)) return;
+function bindDragAndDropListeners(app, html, actor, canManage = () => canManageStructure(actor) && isSheetEditable(app, html)) {
+  if (!canManage()) return;
 
   const selectorRoot = `.tab[data-tab='${TAB_KEY}']`;
 
   html.off("dragstart", `${selectorRoot} .faction-group-card`);
   html.on("dragstart", `${selectorRoot} .faction-group-card`, (event) => {
-    if (event.target.closest("input, button")) return;
+    if (!event.target.closest(".faction-drag-handle")) return;
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     if (Number.isNaN(groupIndex)) return;
     _dragState = { kind: "group", groupIndex };
     event.originalEvent.dataTransfer.effectAllowed = "move";
+    event.originalEvent.dataTransfer.setData("text/plain", "faction-status-group");
     event.currentTarget.classList.add("dragging");
     event.stopImmediatePropagation();
   });
 
   html.off("dragstart", `${selectorRoot} .faction-status-row`);
   html.on("dragstart", `${selectorRoot} .faction-status-row`, (event) => {
-    if (event.target.closest("input, button")) return;
+    if (!event.target.closest(".faction-drag-handle")) return;
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     const factionIndex = Number.parseInt(event.currentTarget.dataset.factionIndex, 10);
     if (Number.isNaN(groupIndex) || Number.isNaN(factionIndex)) return;
     _dragState = { kind: "faction", groupIndex, factionIndex };
     event.originalEvent.dataTransfer.effectAllowed = "move";
+    event.originalEvent.dataTransfer.setData("text/plain", "faction-status-faction");
     event.currentTarget.classList.add("dragging");
     event.stopImmediatePropagation();
   });
@@ -600,7 +611,7 @@ function bindDragAndDropListeners(app, html, actor) {
     event.preventDefault();
     event.stopImmediatePropagation();
     event.currentTarget.classList.remove("drag-over");
-    if (_dragState?.kind !== "faction" || !canManageStructure(actor)) {
+    if (_dragState?.kind !== "faction" || !canManage()) {
       _dragState = null;
       return;
     }
@@ -640,7 +651,7 @@ function bindDragAndDropListeners(app, html, actor) {
   html.on("drop", `${selectorRoot} .faction-group-card`, async (event) => {
     event.preventDefault();
     event.currentTarget.classList.remove("drag-over");
-    if (!_dragState || !canManageStructure(actor)) {
+    if (!_dragState || !canManage()) {
       _dragState = null;
       return;
     }
