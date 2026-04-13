@@ -103,7 +103,7 @@ a[data-tab="faction-status"] i {
 
 .faction-group-columns {
   display: grid;
-  grid-template-columns: 1fr 8.5rem 2.25rem;
+  grid-template-columns: 1fr 8.5rem 6.25rem;
   gap: 0.5rem;
   padding: 0 0.2rem;
   font-size: 0.8rem;
@@ -122,7 +122,7 @@ a[data-tab="faction-status"] i {
 
 .faction-status-row {
   display: grid;
-  grid-template-columns: auto 1fr 8.5rem 2.25rem;
+  grid-template-columns: 1fr 8.5rem 6.25rem;
   gap: 0.45rem;
   align-items: center;
   border: 1px solid var(--color-border-light-tertiary, #ccc);
@@ -166,43 +166,25 @@ a[data-tab="faction-status"] i {
   color: var(--color-text-light-6, #b7b7b7);
 }
 
+.faction-status-actions {
+  display: flex;
+  gap: 0.2rem;
+  justify-content: flex-end;
+}
+
 .faction-status-empty {
   color: var(--color-text-dark-secondary, #555);
   font-style: italic;
   margin: 0.2rem 0;
 }
 
-.faction-drag-handle {
-  cursor: grab;
-  color: var(--color-text-light-6, #999);
-  display: flex;
-  align-items: center;
-  padding: 0 0.25rem;
-  user-select: none;
-}
-
-.faction-drag-handle:active {
-  cursor: grabbing;
-}
-
-.faction-group-card.dragging,
-.faction-status-row.dragging {
-  opacity: 0.4;
-}
-
-.faction-group-card.drag-over,
-.faction-status-row.drag-over {
-  outline: 2px dashed var(--color-border-highlight, #4b7be5);
-  outline-offset: 2px;
-}
-
 @media (max-width: 760px) {
   .faction-group-columns {
-    grid-template-columns: 1fr 7.5rem 2rem;
+    grid-template-columns: 1fr 7.5rem 6rem;
   }
 
   .faction-status-row {
-    grid-template-columns: auto 1fr 7.5rem 2rem;
+    grid-template-columns: 1fr 7.5rem 6rem;
   }
 
   .faction-status-stepper {

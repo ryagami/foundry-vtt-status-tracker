@@ -9,12 +9,9 @@
   <section class="faction-status-list">
     {{#if groups.length}}
       {{#each groups as |group groupIndex|}}
-        <section class="faction-group-card{{#if group.collapsed}} is-collapsed{{/if}}" {{#if ../permissions.canManageStructure}}draggable="true"{{/if}} data-group-id="{{group.id}}" data-group-index="{{groupIndex}}">
+        <section class="faction-group-card{{#if group.collapsed}} is-collapsed{{/if}}" data-group-id="{{group.id}}" data-group-index="{{groupIndex}}">
           <div class="faction-group-header">
             <div class="faction-group-main">
-              {{#if ../permissions.canManageStructure}}
-                <span class="faction-drag-handle" aria-hidden="true"><i class="fa-solid fa-grip-vertical"></i></span>
-              {{/if}}
               <button
                 type="button"
                 class="faction-group-toggle"
@@ -39,6 +36,26 @@
             <div class="faction-group-actions">
               <span class="faction-count-badge" title="{{../labels.factionCountLabel}}">{{group.factions.length}}</span>
               {{#if ../permissions.canManageStructure}}
+                <button
+                  type="button"
+                  class="faction-group-move icon-button"
+                  data-group-index="{{groupIndex}}"
+                  data-direction="up"
+                  aria-label="{{../labels.moveGroupUpAria}}"
+                  title="{{../labels.moveGroupUpAria}}"
+                >
+                  <i class="fa-solid fa-arrow-up" aria-hidden="true"></i>
+                </button>
+                <button
+                  type="button"
+                  class="faction-group-move icon-button"
+                  data-group-index="{{groupIndex}}"
+                  data-direction="down"
+                  aria-label="{{../labels.moveGroupDownAria}}"
+                  title="{{../labels.moveGroupDownAria}}"
+                >
+                  <i class="fa-solid fa-arrow-down" aria-hidden="true"></i>
+                </button>
                 <button
                   type="button"
                   class="faction-status-add icon-button"
@@ -71,10 +88,7 @@
             {{#if group.factions.length}}
               <div class="faction-group-factions">
               {{#each group.factions as |faction factionIndex|}}
-                <div class="faction-status-row" {{#if ../../permissions.canManageStructure}}draggable="true"{{/if}} data-group-index="{{groupIndex}}" data-faction-index="{{factionIndex}}">
-                  {{#if ../../permissions.canManageStructure}}
-                    <span class="faction-drag-handle" aria-hidden="true"><i class="fa-solid fa-grip-vertical"></i></span>
-                  {{/if}}
+                <div class="faction-status-row" data-group-index="{{groupIndex}}" data-faction-index="{{factionIndex}}">
                   <input
                     type="text"
                     class="faction-status-name"
@@ -123,16 +137,40 @@
                   </div>
 
                   {{#if ../../permissions.canManageStructure}}
-                    <button
-                      type="button"
-                      class="faction-status-delete icon-button"
-                      data-group-index="{{groupIndex}}"
-                      data-faction-index="{{factionIndex}}"
-                      aria-label="{{../../labels.deleteFactionAria}}"
-                      title="{{../../labels.deleteFactionAria}}"
-                    >
-                      <i class="fa-solid fa-trash" aria-hidden="true"></i>
-                    </button>
+                    <div class="faction-status-actions">
+                      <button
+                        type="button"
+                        class="faction-status-move icon-button"
+                        data-group-index="{{groupIndex}}"
+                        data-faction-index="{{factionIndex}}"
+                        data-direction="up"
+                        aria-label="{{../../labels.moveFactionUpAria}}"
+                        title="{{../../labels.moveFactionUpAria}}"
+                      >
+                        <i class="fa-solid fa-arrow-up" aria-hidden="true"></i>
+                      </button>
+                      <button
+                        type="button"
+                        class="faction-status-move icon-button"
+                        data-group-index="{{groupIndex}}"
+                        data-faction-index="{{factionIndex}}"
+                        data-direction="down"
+                        aria-label="{{../../labels.moveFactionDownAria}}"
+                        title="{{../../labels.moveFactionDownAria}}"
+                      >
+                        <i class="fa-solid fa-arrow-down" aria-hidden="true"></i>
+                      </button>
+                      <button
+                        type="button"
+                        class="faction-status-delete icon-button"
+                        data-group-index="{{groupIndex}}"
+                        data-faction-index="{{factionIndex}}"
+                        aria-label="{{../../labels.deleteFactionAria}}"
+                        title="{{../../labels.deleteFactionAria}}"
+                      >
+                        <i class="fa-solid fa-trash" aria-hidden="true"></i>
+                      </button>
+                    </div>
                   {{else}}
                     <span></span>
                   {{/if}}

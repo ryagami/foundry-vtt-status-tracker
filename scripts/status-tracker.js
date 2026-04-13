@@ -391,6 +391,10 @@ async function onRenderActorSheet(app, html) {
         deleteGroupAria: localize("deleteGroupAriaLabel", "Delete group"),
         addFaction: localize("addFaction", "Add Faction"),
         addFactionAria: localize("addFactionAriaLabel", "Add faction"),
+        moveGroupUpAria: localize("moveGroupUpAriaLabel", "Move group up"),
+        moveGroupDownAria: localize("moveGroupDownAriaLabel", "Move group down"),
+        moveFactionUpAria: localize("moveFactionUpAriaLabel", "Move faction up"),
+        moveFactionDownAria: localize("moveFactionDownAriaLabel", "Move faction down"),
         name: localize("nameLabel", "Name"),
         status: localize("statusLabel", "Status"),
         decreaseStatusAria: localize("decreaseStatusAriaLabel", "Decrease status"),
@@ -536,6 +540,43 @@ function bindFactionStatusListeners(app, html, actor) {
     app.render(true);
   });
 
+  html.off("click", `${selectorRoot} .faction-group-move`);
+  html.on("click", `${selectorRoot} .faction-group-move`, async (event) => {
+    event.preventDefault();
+    if (!canManage()) return;
+
+    const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
+    const direction = event.currentTarget.dataset.direction;
+    if (Number.isNaN(groupIndex) || !["up", "down"].includes(direction)) return;
+
+    const targetIndex = direction === "up" ? groupIndex - 1 : groupIndex + 1;
+
+    try {
+      await enqueueActorMutation(actor.id, async () => {
+        const groups = getFactionGroups(actor);
+        mergePendingNames(html, groups);
+        if (groupIndex < 0 || groupIndex >= groups.length) return;
+        if (targetIndex < 0 || targetIndex >= groups.length) return;
+        const [movedGroup] = groups.splice(groupIndex, 1);
+        if (!movedGroup) return;
+        groups.splice(targetIndex, 0, movedGroup);
+        await setFactionGroups(actor, groups);
+        debugLog("Moved group", {
+          actorId: actor.id,
+          actorName: actor.name,
+          from: groupIndex,
+          to: targetIndex
+        });
+      });
+    } catch (error) {
+      console.error(`${MODULE_ID} | Failed moving group`, error);
+      return;
+    }
+
+    _preferredTabByApp.set(app, TAB_KEY);
+    app.render(true);
+  });
+
   html.off("click", `${selectorRoot} .faction-group-header`);
   html.on("click", `${selectorRoot} .faction-group-header`, async (event) => {
     const interactiveTarget = event.target.closest("input, button, a, select, textarea");
@@ -645,6 +686,47 @@ function bindFactionStatusListeners(app, html, actor) {
     app.render(true);
   });
 
+  html.off("click", `${selectorRoot} .faction-status-move`);
+  html.on("click", `${selectorRoot} .faction-status-move`, async (event) => {
+    event.preventDefault();
+    if (!canManage()) return;
+
+    const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
+    const factionIndex = Number.parseInt(event.currentTarget.dataset.factionIndex, 10);
+    const direction = event.currentTarget.dataset.direction;
+    if (Number.isNaN(groupIndex) || Number.isNaN(factionIndex) || !["up", "down"].includes(direction)) return;
+
+    const targetIndex = direction === "up" ? factionIndex - 1 : factionIndex + 1;
+
+    try {
+      await enqueueActorMutation(actor.id, async () => {
+        const groups = getFactionGroups(actor);
+        mergePendingNames(html, groups);
+        if (groupIndex < 0 || groupIndex >= groups.length) return;
+        const factions = groups[groupIndex].factions;
+        if (factionIndex < 0 || factionIndex >= factions.length) return;
+        if (targetIndex < 0 || targetIndex >= factions.length) return;
+        const [movedFaction] = factions.splice(factionIndex, 1);
+        if (!movedFaction) return;
+        factions.splice(targetIndex, 0, movedFaction);
+        await setFactionGroups(actor, groups);
+        debugLog("Moved faction", {
+          actorId: actor.id,
+          actorName: actor.name,
+          groupIndex,
+          from: factionIndex,
+          to: targetIndex
+        });
+      });
+    } catch (error) {
+      console.error(`${MODULE_ID} | Failed moving faction`, error);
+      return;
+    }
+
+    _preferredTabByApp.set(app, TAB_KEY);
+    app.render(true);
+  });
+
   html.off("change", `${selectorRoot} .faction-status-name`);
   html.on("change", `${selectorRoot} .faction-status-name`, async (event) => {
     if (!canManage()) return;
@@ -730,7 +812,7 @@ function bindFactionStatusListeners(app, html, actor) {
     });
   });
 
-  bindDragAndDropListeners(app, html, actor, canManage);
+  // Drag-and-drop intentionally disabled; using explicit arrow controls for ordering.
 }
 
 function bindDragAndDropListeners(app, html, actor, canManage = () => canManageStructure(actor) && isSheetInEditMode(app, html)) {
