@@ -376,14 +376,18 @@ function bindFactionStatusListeners(app, html, actor) {
     app.render(true);
   });
 
-  html.off("click", `${selectorRoot} .faction-group-toggle`);
-  html.on("click", `${selectorRoot} .faction-group-toggle`, (event) => {
+  html.off("click", `${selectorRoot} .faction-group-header`);
+  html.on("click", `${selectorRoot} .faction-group-header`, (event) => {
+    const interactiveTarget = event.target.closest("input, button, a, select, textarea");
+    if (interactiveTarget && !interactiveTarget.classList.contains("faction-group-toggle")) return;
+
     event.preventDefault();
     const card = event.currentTarget.closest(".faction-group-card");
     if (!card) return;
 
     const isCollapsed = card.classList.toggle("is-collapsed");
-    event.currentTarget.setAttribute("aria-expanded", String(!isCollapsed));
+    const toggleButton = card.querySelector(".faction-group-toggle");
+    if (toggleButton) toggleButton.setAttribute("aria-expanded", String(!isCollapsed));
   });
 
   html.off("change", `${selectorRoot} .faction-group-name`);
