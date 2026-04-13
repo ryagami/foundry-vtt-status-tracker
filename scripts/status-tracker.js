@@ -7,6 +7,7 @@ const PLAYER_VISIBILITY_SETTING_KEY = "visibleToPlayers";
 const GROUP_UI_STATE_FLAG = "groupUiState";
 let _dragState = null;
 const _latestRenderByApp = new WeakMap();
+const _actorMutationQueues = new Map();
 
 export function initFactionStatusTracker() {
   game.settings.register(MODULE_ID, DEBUG_SETTING_KEY, {
@@ -45,6 +46,14 @@ function debugLog(message, context = {}) {
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function enqueueActorMutation(actorId, fn) {
+  const tail = (_actorMutationQueues.get(actorId) ?? Promise.resolve())
+    .then(fn)
+    .catch((err) => console.error(`${MODULE_ID} | Actor mutation failed for ${actorId}`, err));
+  _actorMutationQueues.set(actorId, tail);
+  return tail;
 }
 
 function createUniqueName(existingNames, baseName) {
@@ -119,7 +128,7 @@ export async function setFactionGroups(actor, groups) {
     Object.entries(existingUiState).filter(([groupId]) => groupIds.has(groupId))
   );
 
-  if (!foundry.utils.isEmpty(prunedUiState) || !foundry.utils.isEmpty(existingUiState)) {
+  if (Object.keys(prunedUiState).length > 0 || Object.keys(existingUiState).length > 0) {
     await actor.setFlag(MODULE_ID, GROUP_UI_STATE_FLAG, prunedUiState);
   }
 
@@ -180,6 +189,8 @@ function canViewFactionTab(actor) {
 }
 
 function isSheetInEditMode(app, html) {
+  // dnd5e ApplicationV2 sheet: _mode === 1 is edit, _mode === 2 is play/view
+  if (typeof app?._mode === "number") return app._mode === 1;
   if (typeof app?.isEditing === "boolean") return app.isEditing;
   if (typeof app?.editMode === "boolean") return app.editMode;
 
@@ -206,15 +217,23 @@ function isSheetInEditMode(app, html) {
   return false;
 }
 
-function mergePendingGroupNames(html, groups) {
-  const selectorRoot = `.tab[data-tab='${TAB_KEY}'] .faction-group-name`;
-  html.find(selectorRoot).each((_, element) => {
-    const index = Number.parseInt(element.dataset.groupIndex, 10);
-    if (Number.isNaN(index) || index < 0 || index >= groups.length) return;
-
+function mergePendingNames(html, groups) {
+  html.find(`.tab[data-tab='${TAB_KEY}'] .faction-group-name`).each((_, element) => {
+    const groupIndex = Number.parseInt(element.dataset.groupIndex, 10);
+    if (Number.isNaN(groupIndex) || groupIndex < 0 || groupIndex >= groups.length) return;
     const pendingName = String(element.value ?? "").trim();
     if (!pendingName) return;
-    groups[index].name = pendingName;
+    groups[groupIndex].name = pendingName;
+  });
+  html.find(`.tab[data-tab='${TAB_KEY}'] .faction-status-name`).each((_, element) => {
+    const groupIndex = Number.parseInt(element.dataset.groupIndex, 10);
+    const factionIndex = Number.parseInt(element.dataset.factionIndex, 10);
+    if (Number.isNaN(groupIndex) || groupIndex < 0 || groupIndex >= groups.length) return;
+    const factions = groups[groupIndex].factions;
+    if (Number.isNaN(factionIndex) || factionIndex < 0 || factionIndex >= factions.length) return;
+    const pendingName = String(element.value ?? "").trim();
+    if (!pendingName) return;
+    factions[factionIndex].name = pendingName;
   });
 }
 
@@ -369,13 +388,15 @@ async function onRenderActorSheet(app, html) {
 function initializeTabSwitching(html, navGroup) {
   // Use Foundry's public Tabs class to manage tab switching for our injected tab
   try {
+    const activeNavItem = html.find(`nav[data-group="${navGroup}"] .item.active, nav[data-group="${navGroup}"] a.active`).first();
+    const initialTab = activeNavItem.length ? (activeNavItem.data("tab") || TAB_KEY) : TAB_KEY;
     const tabs = new foundry.applications.ux.Tabs({
       navSelector: `nav[data-group="${navGroup}"]`,
       contentSelector: `.sheet-body, section.sheet-body, .tab-body, [class*="sheet-content"]`,
-      initial: TAB_KEY
+      initial: initialTab
     });
     tabs.bind(html[0]);
-    debugLog("Initialized tab switching", { navGroup, tabKey: TAB_KEY });
+    debugLog("Initialized tab switching", { navGroup, initialTab });
   } catch (error) {
     debugLog("Tab initialization warning (using fallback)", { error: error.message });
     // Fallback: manually handle tab switching
@@ -406,20 +427,22 @@ function bindFactionStatusListeners(app, html, actor) {
     event.preventDefault();
     if (!canManage()) return;
 
-    const groups = getFactionGroups(actor);
-    const newGroupName = createUniqueGroupName(groups.map((group) => group.name), DEFAULT_GROUP_NAME);
-    groups.push({
-      id: foundry.utils.randomID(),
-      name: newGroupName,
-      factions: []
-    });
-
-    await setFactionGroups(actor, groups);
-    debugLog("Added group", {
-      actorId: actor.id,
-      actorName: actor.name,
-      addedGroup: newGroupName,
-      totalGroups: groups.length
+    await enqueueActorMutation(actor.id, async () => {
+      const groups = getFactionGroups(actor);
+      mergePendingNames(html, groups);
+      const newGroupName = createUniqueGroupName(groups.map((group) => group.name), DEFAULT_GROUP_NAME);
+      groups.push({
+        id: foundry.utils.randomID(),
+        name: newGroupName,
+        factions: []
+      });
+      await setFactionGroups(actor, groups);
+      debugLog("Added group", {
+        actorId: actor.id,
+        actorName: actor.name,
+        addedGroup: newGroupName,
+        totalGroups: groups.length
+      });
     });
     app.render(true);
   });
@@ -432,17 +455,18 @@ function bindFactionStatusListeners(app, html, actor) {
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     if (Number.isNaN(groupIndex)) return;
 
-    const groups = getFactionGroups(actor);
-    mergePendingGroupNames(html, groups);
-    if (groupIndex < 0 || groupIndex >= groups.length) return;
-
-    groups.splice(groupIndex, 1);
-    await setFactionGroups(actor, groups);
-    debugLog("Deleted group", {
-      actorId: actor.id,
-      actorName: actor.name,
-      groupIndex,
-      remainingGroups: groups.length
+    await enqueueActorMutation(actor.id, async () => {
+      const groups = getFactionGroups(actor);
+      mergePendingNames(html, groups);
+      if (groupIndex < 0 || groupIndex >= groups.length) return;
+      groups.splice(groupIndex, 1);
+      await setFactionGroups(actor, groups);
+      debugLog("Deleted group", {
+        actorId: actor.id,
+        actorName: actor.name,
+        groupIndex,
+        remainingGroups: groups.length
+      });
     });
     app.render(true);
   });
@@ -469,19 +493,19 @@ function bindFactionStatusListeners(app, html, actor) {
 
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     if (Number.isNaN(groupIndex)) return;
-
-    const groups = getFactionGroups(actor);
-    if (groupIndex < 0 || groupIndex >= groups.length) return;
-
     const nextName = String(event.currentTarget.value ?? "").trim();
-    groups[groupIndex].name = nextName || createUniqueGroupName(groups.map((group, i) => (i === groupIndex ? "" : group.name)), DEFAULT_GROUP_NAME);
 
-    await setFactionGroups(actor, groups);
-    debugLog("Updated group name", {
-      actorId: actor.id,
-      actorName: actor.name,
-      groupIndex,
-      name: groups[groupIndex].name
+    await enqueueActorMutation(actor.id, async () => {
+      const groups = getFactionGroups(actor);
+      if (groupIndex < 0 || groupIndex >= groups.length) return;
+      groups[groupIndex].name = nextName || createUniqueGroupName(groups.map((group, i) => (i === groupIndex ? "" : group.name)), DEFAULT_GROUP_NAME);
+      await setFactionGroups(actor, groups);
+      debugLog("Updated group name", {
+        actorId: actor.id,
+        actorName: actor.name,
+        groupIndex,
+        name: groups[groupIndex].name
+      });
     });
   });
 
@@ -493,26 +517,25 @@ function bindFactionStatusListeners(app, html, actor) {
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     if (Number.isNaN(groupIndex)) return;
 
-    const groups = getFactionGroups(actor);
-    mergePendingGroupNames(html, groups);
-    if (groupIndex < 0 || groupIndex >= groups.length) return;
-
-    const factions = groups[groupIndex].factions;
-    const newName = createUniqueFactionName(factions.map((faction) => faction.name), DEFAULT_FACTION_NAME);
-
-    factions.push({
-      id: foundry.utils.randomID(),
-      name: newName,
-      value: 0
-    });
-
-    await setFactionGroups(actor, groups);
-    debugLog("Added faction entry", {
-      actorId: actor.id,
-      actorName: actor.name,
-      groupIndex,
-      addedName: newName,
-      totalFactions: factions.length
+    await enqueueActorMutation(actor.id, async () => {
+      const groups = getFactionGroups(actor);
+      mergePendingNames(html, groups);
+      if (groupIndex < 0 || groupIndex >= groups.length) return;
+      const factions = groups[groupIndex].factions;
+      const newName = createUniqueFactionName(factions.map((faction) => faction.name), DEFAULT_FACTION_NAME);
+      factions.push({
+        id: foundry.utils.randomID(),
+        name: newName,
+        value: 0
+      });
+      await setFactionGroups(actor, groups);
+      debugLog("Added faction entry", {
+        actorId: actor.id,
+        actorName: actor.name,
+        groupIndex,
+        addedName: newName,
+        totalFactions: factions.length
+      });
     });
     app.render(true);
   });
@@ -526,21 +549,21 @@ function bindFactionStatusListeners(app, html, actor) {
     const factionIndex = Number.parseInt(event.currentTarget.dataset.factionIndex, 10);
     if (Number.isNaN(groupIndex) || Number.isNaN(factionIndex)) return;
 
-    const groups = getFactionGroups(actor);
-    mergePendingGroupNames(html, groups);
-    if (groupIndex < 0 || groupIndex >= groups.length) return;
-
-    const factions = groups[groupIndex].factions;
-    if (factionIndex < 0 || factionIndex >= factions.length) return;
-
-    factions.splice(factionIndex, 1);
-    await setFactionGroups(actor, groups);
-    debugLog("Deleted faction entry", {
-      actorId: actor.id,
-      actorName: actor.name,
-      groupIndex,
-      factionIndex,
-      remainingFactions: factions.length
+    await enqueueActorMutation(actor.id, async () => {
+      const groups = getFactionGroups(actor);
+      mergePendingNames(html, groups);
+      if (groupIndex < 0 || groupIndex >= groups.length) return;
+      const factions = groups[groupIndex].factions;
+      if (factionIndex < 0 || factionIndex >= factions.length) return;
+      factions.splice(factionIndex, 1);
+      await setFactionGroups(actor, groups);
+      debugLog("Deleted faction entry", {
+        actorId: actor.id,
+        actorName: actor.name,
+        groupIndex,
+        factionIndex,
+        remainingFactions: factions.length
+      });
     });
     app.render(true);
   });
@@ -552,23 +575,22 @@ function bindFactionStatusListeners(app, html, actor) {
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     const factionIndex = Number.parseInt(event.currentTarget.dataset.factionIndex, 10);
     if (Number.isNaN(groupIndex) || Number.isNaN(factionIndex)) return;
-
-    const groups = getFactionGroups(actor);
-    if (groupIndex < 0 || groupIndex >= groups.length) return;
-
-    const factions = groups[groupIndex].factions;
-    if (factionIndex < 0 || factionIndex >= factions.length) return;
-
     const nextName = String(event.currentTarget.value ?? "").trim();
-    factions[factionIndex].name = nextName || createUniqueFactionName(factions.map((faction, i) => (i === factionIndex ? "" : faction.name)), DEFAULT_FACTION_NAME);
 
-    await setFactionGroups(actor, groups);
-    debugLog("Updated faction name", {
-      actorId: actor.id,
-      actorName: actor.name,
-      groupIndex,
-      factionIndex,
-      name: factions[factionIndex].name
+    await enqueueActorMutation(actor.id, async () => {
+      const groups = getFactionGroups(actor);
+      if (groupIndex < 0 || groupIndex >= groups.length) return;
+      const factions = groups[groupIndex].factions;
+      if (factionIndex < 0 || factionIndex >= factions.length) return;
+      factions[factionIndex].name = nextName || createUniqueFactionName(factions.map((faction, i) => (i === factionIndex ? "" : faction.name)), DEFAULT_FACTION_NAME);
+      await setFactionGroups(actor, groups);
+      debugLog("Updated faction name", {
+        actorId: actor.id,
+        actorName: actor.name,
+        groupIndex,
+        factionIndex,
+        name: factions[factionIndex].name
+      });
     });
   });
 
@@ -579,23 +601,22 @@ function bindFactionStatusListeners(app, html, actor) {
     const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
     const factionIndex = Number.parseInt(event.currentTarget.dataset.factionIndex, 10);
     if (Number.isNaN(groupIndex) || Number.isNaN(factionIndex)) return;
-
-    const groups = getFactionGroups(actor);
-    if (groupIndex < 0 || groupIndex >= groups.length) return;
-
-    const factions = groups[groupIndex].factions;
-    if (factionIndex < 0 || factionIndex >= factions.length) return;
-
     const parsedValue = Number.parseInt(event.currentTarget.value, 10);
-    factions[factionIndex].value = Number.isNaN(parsedValue) ? 0 : parsedValue;
 
-    await setFactionGroups(actor, groups);
-    debugLog("Updated faction value", {
-      actorId: actor.id,
-      actorName: actor.name,
-      groupIndex,
-      factionIndex,
-      value: factions[factionIndex].value
+    await enqueueActorMutation(actor.id, async () => {
+      const groups = getFactionGroups(actor);
+      if (groupIndex < 0 || groupIndex >= groups.length) return;
+      const factions = groups[groupIndex].factions;
+      if (factionIndex < 0 || factionIndex >= factions.length) return;
+      factions[factionIndex].value = Number.isNaN(parsedValue) ? 0 : parsedValue;
+      await setFactionGroups(actor, groups);
+      debugLog("Updated faction value", {
+        actorId: actor.id,
+        actorName: actor.name,
+        groupIndex,
+        factionIndex,
+        value: factions[factionIndex].value
+      });
     });
   });
 
@@ -609,29 +630,26 @@ function bindFactionStatusListeners(app, html, actor) {
     const delta = Number.parseInt(event.currentTarget.dataset.delta, 10);
     if (Number.isNaN(groupIndex) || Number.isNaN(factionIndex) || Number.isNaN(delta)) return;
 
-    const groups = getFactionGroups(actor);
-    if (groupIndex < 0 || groupIndex >= groups.length) return;
-
-    const factions = groups[groupIndex].factions;
-    if (factionIndex < 0 || factionIndex >= factions.length) return;
-
-    const nextValue = Number.parseInt(factions[factionIndex].value, 10) + delta;
-    factions[factionIndex].value = Number.isNaN(nextValue) ? delta : nextValue;
-
-    await setFactionGroups(actor, groups);
-
-    const input = html.find(
-      `${selectorRoot} .faction-status-value[data-group-index='${groupIndex}'][data-faction-index='${factionIndex}']`
-    ).first();
-    if (input.length) input.val(factions[factionIndex].value);
-
-    debugLog("Stepped faction value", {
-      actorId: actor.id,
-      actorName: actor.name,
-      groupIndex,
-      factionIndex,
-      delta,
-      value: factions[factionIndex].value
+    await enqueueActorMutation(actor.id, async () => {
+      const groups = getFactionGroups(actor);
+      if (groupIndex < 0 || groupIndex >= groups.length) return;
+      const factions = groups[groupIndex].factions;
+      if (factionIndex < 0 || factionIndex >= factions.length) return;
+      const nextValue = Number.parseInt(factions[factionIndex].value, 10) + delta;
+      factions[factionIndex].value = Number.isNaN(nextValue) ? delta : nextValue;
+      await setFactionGroups(actor, groups);
+      const input = html.find(
+        `${selectorRoot} .faction-status-value[data-group-index='${groupIndex}'][data-faction-index='${factionIndex}']`
+      ).first();
+      if (input.length) input.val(factions[factionIndex].value);
+      debugLog("Stepped faction value", {
+        actorId: actor.id,
+        actorName: actor.name,
+        groupIndex,
+        factionIndex,
+        delta,
+        value: factions[factionIndex].value
+      });
     });
   });
 
@@ -680,6 +698,9 @@ function bindDragAndDropListeners(app, html, actor, canManage = () => canManageS
   html.off("dragover", `${selectorRoot} .faction-group-card`);
   html.on("dragover", `${selectorRoot} .faction-group-card`, (event) => {
     if (!_dragState) return;
+    // Only handle card-level dragover when dragging a group, or when dragging a faction
+    // that is not already over a child faction row (which handles its own dragover).
+    if (_dragState.kind === "faction" && event.target.closest(".faction-status-row")) return;
     event.preventDefault();
     html.find(".drag-over").removeClass("drag-over");
     event.currentTarget.classList.add("drag-over");
@@ -707,22 +728,23 @@ function bindDragAndDropListeners(app, html, actor, canManage = () => canManageS
 
     if (srcGroupIndex === targetGroupIndex && srcFactionIndex === targetFactionIndex) return;
 
-    const groups = getFactionGroups(actor);
-    mergePendingGroupNames(html, groups);
-    const [movedFaction] = groups[srcGroupIndex].factions.splice(srcFactionIndex, 1);
-    const adjustedTarget = (srcGroupIndex === targetGroupIndex && srcFactionIndex < targetFactionIndex)
-      ? targetFactionIndex - 1
-      : targetFactionIndex;
-    groups[targetGroupIndex].factions.splice(adjustedTarget, 0, movedFaction);
-
-    await setFactionGroups(actor, groups);
-    debugLog("Reordered faction", {
-      actorId: actor.id,
-      actorName: actor.name,
-      srcGroupIndex,
-      srcFactionIndex,
-      targetGroupIndex,
-      targetFactionIndex: adjustedTarget
+    await enqueueActorMutation(actor.id, async () => {
+      const groups = getFactionGroups(actor);
+      mergePendingNames(html, groups);
+      const [movedFaction] = groups[srcGroupIndex].factions.splice(srcFactionIndex, 1);
+      const adjustedTarget = (srcGroupIndex === targetGroupIndex && srcFactionIndex < targetFactionIndex)
+        ? targetFactionIndex - 1
+        : targetFactionIndex;
+      groups[targetGroupIndex].factions.splice(adjustedTarget, 0, movedFaction);
+      await setFactionGroups(actor, groups);
+      debugLog("Reordered faction", {
+        actorId: actor.id,
+        actorName: actor.name,
+        srcGroupIndex,
+        srcFactionIndex,
+        targetGroupIndex,
+        targetFactionIndex: adjustedTarget
+      });
     });
     app.render(true);
   });
@@ -742,29 +764,31 @@ function bindDragAndDropListeners(app, html, actor, canManage = () => canManageS
       return;
     }
 
-    const groups = getFactionGroups(actor);
-    mergePendingGroupNames(html, groups);
+    const dragKind = _dragState.kind;
+    const srcGroupIndex = _dragState.groupIndex;
+    const srcFactionIndex = _dragState.factionIndex;
+    _dragState = null;
 
-    if (_dragState.kind === "group") {
-      const srcGroupIndex = _dragState.groupIndex;
-      _dragState = null;
-      if (srcGroupIndex === targetGroupIndex) return;
-      const [movedGroup] = groups.splice(srcGroupIndex, 1);
-      const adjustedTarget = srcGroupIndex < targetGroupIndex ? targetGroupIndex - 1 : targetGroupIndex;
-      groups.splice(adjustedTarget, 0, movedGroup);
-      await setFactionGroups(actor, groups);
-      debugLog("Reordered group", { actorId: actor.id, actorName: actor.name, from: srcGroupIndex, to: adjustedTarget });
-      app.render(true);
-    } else if (_dragState.kind === "faction") {
-      const { groupIndex: srcGroupIndex, factionIndex: srcFactionIndex } = _dragState;
-      _dragState = null;
-      if (srcGroupIndex === targetGroupIndex) return;
-      const [movedFaction] = groups[srcGroupIndex].factions.splice(srcFactionIndex, 1);
-      groups[targetGroupIndex].factions.push(movedFaction);
-      await setFactionGroups(actor, groups);
-      debugLog("Moved faction to group", { actorId: actor.id, actorName: actor.name, srcGroupIndex, srcFactionIndex, targetGroupIndex });
-      app.render(true);
-    }
+    await enqueueActorMutation(actor.id, async () => {
+      const groups = getFactionGroups(actor);
+      mergePendingNames(html, groups);
+
+      if (dragKind === "group") {
+        if (srcGroupIndex === targetGroupIndex) return;
+        const [movedGroup] = groups.splice(srcGroupIndex, 1);
+        const adjustedTarget = srcGroupIndex < targetGroupIndex ? targetGroupIndex - 1 : targetGroupIndex;
+        groups.splice(adjustedTarget, 0, movedGroup);
+        await setFactionGroups(actor, groups);
+        debugLog("Reordered group", { actorId: actor.id, actorName: actor.name, from: srcGroupIndex, to: adjustedTarget });
+      } else if (dragKind === "faction") {
+        if (srcGroupIndex === targetGroupIndex) return;
+        const [movedFaction] = groups[srcGroupIndex].factions.splice(srcFactionIndex, 1);
+        groups[targetGroupIndex].factions.push(movedFaction);
+        await setFactionGroups(actor, groups);
+        debugLog("Moved faction to group", { actorId: actor.id, actorName: actor.name, srcGroupIndex, srcFactionIndex, targetGroupIndex });
+      }
+    });
+    app.render(true);
   });
 
   html.off("dragend", `${selectorRoot} .faction-group-card, ${selectorRoot} .faction-status-row`);
