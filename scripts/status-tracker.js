@@ -5,11 +5,6 @@ const DEFAULT_GROUP_NAME = "New group";
 const DEBUG_SETTING_KEY = "debugLogging";
 const PLAYER_VISIBILITY_SETTING_KEY = "visibleToPlayers";
 let _dragState = null;
-const RENDER_HOOKS = [
-  "renderActorSheet",
-  "renderActorSheet5eCharacter",
-  "renderActorSheet5eCharacter2"
-];
 
 export function initFactionStatusTracker() {
   game.settings.register(MODULE_ID, DEBUG_SETTING_KEY, {
@@ -30,10 +25,11 @@ export function initFactionStatusTracker() {
     default: true
   });
 
-  for (const hookName of RENDER_HOOKS) {
-    Hooks.on(hookName, onRenderActorSheet);
-    debugLog("Registered render hook", { hookName });
-  }
+  Hooks.on("renderApplicationV1", onRenderApplicationV1);
+  Hooks.on("renderApplicationV2", onRenderApplicationV2);
+  debugLog("Registered render hooks", {
+    hooks: ["renderApplicationV1", "renderApplicationV2"]
+  });
 }
 
 function isDebugEnabled() {
@@ -147,11 +143,20 @@ function canViewFactionTab(actor) {
   return isPlayerVisibilityEnabled() && actor?.isOwner === true;
 }
 
-function resolveSheetTabContext(app, html) {
+function getSheetActor(app) {
+  const actor = app?.actor ?? app?.object ?? app?.document;
+  return actor?.documentName === "Actor" ? actor : null;
+}
+
+function isSupportedCharacterSheet(app) {
+  const actor = getSheetActor(app);
+  return actor?.type === "character";
+}
+
+function resolveSheetTabContext(html) {
   const navCandidates = html.find("nav.tabs, nav.sheet-navigation.tabs, nav.sheet-tabs");
   debugLog("Resolving tab context", {
-    navCandidates: navCandidates.length,
-    tabControllers: Array.isArray(app?._tabs) ? app._tabs.length : 0
+    navCandidates: navCandidates.length
   });
 
   for (const element of navCandidates) {
@@ -177,33 +182,6 @@ function resolveSheetTabContext(app, html) {
     }
   }
 
-  const tabsControllers = Array.isArray(app?._tabs) ? app._tabs : [];
-  for (const tabsController of tabsControllers) {
-    const navGroup = tabsController?.group || "primary";
-    const navSelector = tabsController?.navSelector;
-    const contentSelector = tabsController?.contentSelector;
-
-    const nav = navSelector
-      ? html.find(navSelector).first()
-      : html.find(`nav.tabs[data-group='${navGroup}'], nav.sheet-navigation.tabs, nav.sheet-tabs`).first();
-
-    if (!nav.length || nav.find(`[data-tab='${TAB_KEY}']`).length) continue;
-
-    const tabContainer = contentSelector
-      ? html.find(contentSelector).first()
-      : html.find(`.tab[data-group='${navGroup}']`).first().parent();
-
-    if (tabContainer.length) {
-      debugLog("Resolved tab context", {
-        strategy: "tabs-controller",
-        navGroup,
-        navSelector: navSelector ?? null,
-        contentSelector: contentSelector ?? null
-      });
-      return { nav, tabContainer, navGroup };
-    }
-  }
-
   const fallbackNav = html.find("nav.tabs[data-group='primary'], nav.sheet-navigation.tabs, nav.sheet-tabs").first();
   if (!fallbackNav.length || fallbackNav.find(`[data-tab='${TAB_KEY}']`).length) return null;
 
@@ -217,27 +195,23 @@ function resolveSheetTabContext(app, html) {
   return { nav: fallbackNav, tabContainer: fallbackTabContainer, navGroup: "primary" };
 }
 
-function rebindSheetTabs(app, html, targetGroup) {
-  const tabsControllers = Array.isArray(app?._tabs) ? app._tabs : [];
+function onRenderApplicationV1(app, html) {
+  if (!isSupportedCharacterSheet(app)) return;
+  void onRenderActorSheet(app, html);
+}
 
-  for (const tabsController of tabsControllers) {
-    if (!tabsController) continue;
-    if (tabsController.group && tabsController.group !== targetGroup) continue;
-
-    try {
-      tabsController.bind(html[0]);
-    } catch (error) {
-      console.warn(`${MODULE_ID} | Unable to bind tabs controller`, error);
-    }
-  }
+function onRenderApplicationV2(app, element) {
+  if (!isSupportedCharacterSheet(app)) return;
+  const html = $(element);
+  void onRenderActorSheet(app, html);
 }
 
 async function onRenderActorSheet(app, html) {
-  const actor = app?.actor ?? app?.object;
+  const actor = getSheetActor(app);
   if (!actor || actor.type !== "character") return;
   if (!canViewFactionTab(actor)) return;
 
-  const context = resolveSheetTabContext(app, html);
+  const context = resolveSheetTabContext(html);
   if (!context) {
     debugLog("Skipping tab injection", {
       reason: "no-tab-context",
@@ -280,7 +254,6 @@ async function onRenderActorSheet(app, html) {
   });
 
   tabContainer.append(tabHtml);
-  rebindSheetTabs(app, html, navGroup);
   debugLog("Injected faction status tab", {
     actorId: actor.id,
     actorName: actor.name,

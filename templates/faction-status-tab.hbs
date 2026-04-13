@@ -12,7 +12,7 @@
         <section class="faction-group-card" {{#if ../permissions.canManageStructure}}draggable="true"{{/if}} data-group-index="{{groupIndex}}">
           <div class="faction-group-header">
             {{#if ../permissions.canManageStructure}}
-              <span class="faction-drag-handle" aria-hidden="true"><i class="fas fa-grip-vertical"></i></span>
+              <span class="faction-drag-handle" aria-hidden="true"><i class="fa-solid fa-grip-vertical"></i></span>
             {{/if}}
             <label>
               {{../labels.groupName}}
@@ -51,7 +51,7 @@
               {{#each group.factions as |faction factionIndex|}}
                 <div class="faction-status-row" {{#if ../../permissions.canManageStructure}}draggable="true"{{/if}} data-group-index="{{groupIndex}}" data-faction-index="{{factionIndex}}">
                   {{#if ../../permissions.canManageStructure}}
-                    <span class="faction-drag-handle" aria-hidden="true"><i class="fas fa-grip-vertical"></i></span>
+                    <span class="faction-drag-handle" aria-hidden="true"><i class="fa-solid fa-grip-vertical"></i></span>
                   {{/if}}
                   <label>
                     {{../../labels.name}}

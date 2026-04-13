@@ -1,16 +1,17 @@
 {
   "id": "foundry-vtt-status-tracker",
   "title": "Faction Status Tracker",
-  "description": "Adds a GM-only character sheet tab for tracking faction status values.",
-  "version": "0.1.0",
+  "description": "Adds a character sheet tab for tracking faction status values and faction groups.",
+  "version": "0.2.0",
   "authors": [
     {
       "name": "Stefan"
     }
   ],
   "compatibility": {
-    "minimum": "12",
-    "verified": "12"
+    "minimum": "13",
+    "verified": "13.350",
+    "maximum": "13"
   },
   "relationships": {
     "systems": [
