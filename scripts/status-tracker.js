@@ -79,7 +79,8 @@ function sanitizeFactionEntry(entry, index) {
   return {
     id: typeof entry?.id === "string" && entry.id.trim() ? entry.id : `faction-${index}-${foundry.utils.randomID(6)}`,
     name: typeof entry?.name === "string" && entry.name.trim() ? entry.name.trim() : DEFAULT_FACTION_NAME,
-    value: Number.isNaN(value) ? 0 : value
+    value: Number.isNaN(value) ? 0 : value,
+    hidden: entry?.hidden === true
   };
 }
 
@@ -154,6 +155,29 @@ function applyGroupUiState(groups, actor) {
     ...group,
     collapsed: uiState[group.id]?.collapsed === true
   }));
+}
+
+function filterHiddenFactionsForUser(groups) {
+  if (game.user?.isGM) return groups;
+
+  return groups
+    .map((group) => ({
+      ...group,
+      factions: group.factions.filter((faction) => faction.hidden !== true)
+    }))
+    .filter((group) => group.factions.length > 0);
+}
+
+function withVisibilityMetadata(groups) {
+  return groups.map((group) => {
+    const hiddenCount = group.factions.filter((faction) => faction.hidden === true).length;
+    return {
+      ...group,
+      hiddenCount,
+      hasHidden: hiddenCount > 0,
+      allHidden: hiddenCount > 0 && hiddenCount === group.factions.length
+    };
+  });
 }
 
 export function createUniqueFactionName(existingNames, baseName = DEFAULT_FACTION_NAME) {
@@ -418,7 +442,8 @@ async function onRenderActorSheet(app, html) {
     const currentlyActiveTab = html.find(`nav[data-group='${navGroup}'] [data-tab].active`).first().data("tab");
     const preferredTab = _preferredTabByApp.get(app) || currentlyActiveTab || TAB_KEY;
 
-    const groups = applyGroupUiState(getFactionGroups(actor), actor);
+    const allGroups = applyGroupUiState(getFactionGroups(actor), actor);
+    const groups = withVisibilityMetadata(filterHiddenFactionsForUser(allGroups));
     const editable = isSheetInEditMode(app, html);
     const permissions = {
       canManageStructure: canManageStructure(actor) && editable,
@@ -449,6 +474,9 @@ async function onRenderActorSheet(app, html) {
         moveGroupDownAria: localize("moveGroupDownAriaLabel", "Move group down"),
         moveFactionUpAria: localize("moveFactionUpAriaLabel", "Move faction up"),
         moveFactionDownAria: localize("moveFactionDownAriaLabel", "Move faction down"),
+        hideFactionFromPlayersAria: localize("hideFactionFromPlayersAriaLabel", "Hide faction from players"),
+        showFactionToPlayersAria: localize("showFactionToPlayersAriaLabel", "Show faction to players"),
+        hiddenGroupHint: localize("hiddenGroupHintLabel", "Contains hidden factions"),
         name: localize("nameLabel", "Name"),
         status: localize("statusLabel", "Status"),
         decreaseStatusAria: localize("decreaseStatusAriaLabel", "Decrease status"),
@@ -740,6 +768,40 @@ function bindFactionStatusListeners(app, html, actor) {
       console.error(`${MODULE_ID} | Failed deleting faction`, error);
       return;
     }
+    rerenderFactionTab();
+  });
+
+  html.off("click", `${selectorRoot} .faction-visibility-toggle`);
+  html.on("click", `${selectorRoot} .faction-visibility-toggle`, async (event) => {
+    event.preventDefault();
+    if (!canManage()) return;
+
+    const groupIndex = Number.parseInt(event.currentTarget.dataset.groupIndex, 10);
+    const factionIndex = Number.parseInt(event.currentTarget.dataset.factionIndex, 10);
+    if (Number.isNaN(groupIndex) || Number.isNaN(factionIndex)) return;
+
+    try {
+      await enqueueActorMutation(actor.id, async () => {
+        const groups = getFactionGroups(actor);
+        mergePendingNames(html, groups);
+        if (groupIndex < 0 || groupIndex >= groups.length) return;
+        const factions = groups[groupIndex].factions;
+        if (factionIndex < 0 || factionIndex >= factions.length) return;
+        factions[factionIndex].hidden = factions[factionIndex].hidden !== true;
+        await setFactionGroups(actor, groups);
+        debugLog("Toggled faction visibility", {
+          actorId: actor.id,
+          actorName: actor.name,
+          groupIndex,
+          factionIndex,
+          hidden: factions[factionIndex].hidden === true
+        });
+      });
+    } catch (error) {
+      console.error(`${MODULE_ID} | Failed toggling faction visibility`, error);
+      return;
+    }
+
     rerenderFactionTab();
   });
 

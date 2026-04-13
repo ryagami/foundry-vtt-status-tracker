@@ -7,7 +7,7 @@
   <section class="faction-status-list">
     {{#if groups.length}}
       {{#each groups as |group groupIndex|}}
-        <section class="faction-group-card{{#if group.collapsed}} is-collapsed{{/if}}" data-group-id="{{group.id}}" data-group-index="{{groupIndex}}">
+        <section class="faction-group-card{{#if group.collapsed}} is-collapsed{{/if}}{{#if group.hasHidden}} has-hidden{{/if}}{{#if group.allHidden}} is-hidden{{/if}}" data-group-id="{{group.id}}" data-group-index="{{groupIndex}}">
           <div class="faction-group-header">
             <div class="faction-group-main">
               <button
@@ -29,6 +29,11 @@
                 aria-label="{{../labels.groupName}}"
                 {{#unless ../permissions.canManageStructure}}disabled{{/unless}}
               />
+              {{#if group.hasHidden}}
+                <span class="faction-hidden-pill" title="{{../labels.hiddenGroupHint}}" aria-label="{{../labels.hiddenGroupHint}}">
+                  <i class="fa-solid fa-eye-slash" aria-hidden="true"></i>
+                </span>
+              {{/if}}
             </div>
 
             <div class="faction-group-actions">
@@ -88,7 +93,7 @@
             {{#if group.factions.length}}
               <div class="faction-group-factions">
               {{#each group.factions as |faction factionIndex|}}
-                <div class="faction-status-row" data-group-index="{{groupIndex}}" data-faction-index="{{factionIndex}}">
+                <div class="faction-status-row{{#if faction.hidden}} is-hidden{{/if}}" data-group-index="{{groupIndex}}" data-faction-index="{{factionIndex}}">
                   <input
                     type="text"
                     class="faction-status-name"
@@ -137,6 +142,18 @@
                   </div>
 
                   <div class="faction-status-actions">
+                    {{#if ../../permissions.canManageStructure}}
+                      <button
+                        type="button"
+                        class="faction-visibility-toggle icon-button {{#if faction.hidden}}is-hidden{{/if}}"
+                        data-group-index="{{groupIndex}}"
+                        data-faction-index="{{factionIndex}}"
+                        aria-label="{{#if faction.hidden}}{{../../labels.showFactionToPlayersAria}}{{else}}{{../../labels.hideFactionFromPlayersAria}}{{/if}}"
+                        title="{{#if faction.hidden}}{{../../labels.showFactionToPlayersAria}}{{else}}{{../../labels.hideFactionFromPlayersAria}}{{/if}}"
+                      >
+                        <i class="fa-solid {{#if faction.hidden}}fa-eye-slash{{else}}fa-eye{{/if}}" aria-hidden="true"></i>
+                      </button>
+                    {{/if}}
                     <button
                       type="button"
                       class="faction-status-move icon-button"
