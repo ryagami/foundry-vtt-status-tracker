@@ -273,26 +273,14 @@ function resolveSheetTabContext(html) {
     const navGroup = nav.data("group") || nav.find("[data-group]").first().data("group") || "primary";
     debugLog("Found nav with group", { navGroup, tabLinkCount: tabLinks.length });
     
-    // Find tabs that belong to this specific nav's group
-    // First, look for a tab container as a sibling or ancestor's sibling
-    let tabContainer = null;
-    
-    // Try to find the tab container by looking at siblings and following elements
-    let searchContext = nav.parent();
-    tabContainer = searchContext.find(`.tab[data-group='${navGroup}']`).parent().first();
-    
-    if (!tabContainer?.length) {
-      // Fallback: look in the entire sheet, but take the first result
-      const groupTabs = html.find(`.tab[data-group='${navGroup}']`);
-      if (groupTabs.length < 2) {
-        debugLog("Skipping: < 2 tabs in group", { navGroup, groupTabs: groupTabs.length });
-        continue;
-      }
-      const existingTab = groupTabs.first();
-      tabContainer = existingTab.parent();
+    const groupTabs = html.find(`.tab[data-group='${navGroup}']`);
+    if (groupTabs.length < 2) {
+      debugLog("Skipping: < 2 tabs in group", { navGroup, groupTabs: groupTabs.length });
+      continue;
     }
 
-    if (tabContainer?.length) {
+    const tabContainer = groupTabs.first().parent().first();
+    if (tabContainer.length === 1) {
       debugLog("Resolved tab context", {
         strategy: "dom-nav-scan",
         navGroup,
@@ -312,8 +300,14 @@ function resolveSheetTabContext(html) {
     return null;
   }
 
-  const fallbackTabContainer = html.find(".sheet-body, section.sheet-body, .tab-body").first();
-  if (!fallbackTabContainer.length) {
+  const fallbackTabs = html.find(".tab[data-group='primary']");
+  if (fallbackTabs.length < 2) {
+    debugLog("No fallback primary tab set found", { count: fallbackTabs.length });
+    return null;
+  }
+
+  const fallbackTabContainer = fallbackTabs.first().parent().first();
+  if (fallbackTabContainer.length !== 1) {
     debugLog("No fallback tab container found");
     return null;
   }
@@ -364,7 +358,9 @@ async function onRenderActorSheet(app, html) {
       return;
     }
 
-    const { nav, tabContainer, navGroup } = context;
+    const { nav: contextNav, tabContainer: contextTabContainer, navGroup } = context;
+    const nav = contextNav.first();
+    const tabContainer = contextTabContainer.first();
     const currentlyActiveTab = html.find(`nav[data-group='${navGroup}'] [data-tab].active`).first().data("tab");
     const preferredTab = _preferredTabByApp.get(app) || currentlyActiveTab || TAB_KEY;
 
@@ -376,12 +372,6 @@ async function onRenderActorSheet(app, html) {
     };
 
     const tabAriaLabel = localize("tabAriaLabel", "Faction Status");
-    
-    // Ensure nav is a single element
-    if (nav.length > 1) {
-      console.warn(`${MODULE_ID} | Nav has ${nav.length} elements, using first one`);
-      nav = nav.first();
-    }
     
     nav.append(`<a class='item' data-group='${navGroup}' data-tab='${TAB_KEY}' title='${tabAriaLabel}' aria-label='${tabAriaLabel}'><i class='fa-solid fa-layer-group'></i></a>`);
 
@@ -421,11 +411,6 @@ async function onRenderActorSheet(app, html) {
       return;
     }
     
-    if (tabContainer.length > 1) {
-      console.warn(`${MODULE_ID} | Tab container has ${tabContainer.length} elements, using first one`);
-      tabContainer = tabContainer.first();
-    }
-
     tabContainer.append(tabHtml);
     debugLog("Injected faction status tab", {
       actorId: actor.id,
