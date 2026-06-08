@@ -272,166 +272,120 @@ function isSupportedCharacterSheet(app) {
   return actor?.type === "character";
 }
 
+function getAppDebugContext(app) {
+  const actor = getSheetActor(app);
+  return {
+    appId: app?.id ?? null,
+    sheetClass: app?.constructor?.name ?? "unknown",
+    actorId: actor?.id ?? null,
+    actorName: actor?.name ?? null,
+    actorType: actor?.type ?? null
+  };
+}
+
 function resolveSheetTabContext(html) {
   // dnd5e v5e sheets render primary tab content in .tab-body#tabs.
-  // Prefer this canonical container to avoid injecting into nested/secondary tab regions.
+  // Only target this canonical container to avoid nested/secondary tab regions.
   const canonicalNav = html.find("nav.tabs[data-group='primary'], nav.tabs-right[data-group='primary'], nav.tabs-left[data-group='primary']").first();
   const canonicalContainer = html.find(".tab-body#tabs").first();
-  if (canonicalNav.length && canonicalContainer.length) {
-    const navTabIds = new Set(
-      canonicalNav
-        .find("[data-tab]")
-        .map((_, link) => String(link.dataset.tab ?? "").trim())
-        .get()
-        .filter(Boolean)
-    );
-    const matchingCanonicalTabs = canonicalContainer
-      .children(".tab[data-group='primary']")
-      .filter((_, tab) => navTabIds.has(String(tab.dataset.tab ?? "")));
-
-    if (matchingCanonicalTabs.length >= 2 && !canonicalNav.find(`[data-tab='${TAB_KEY}']`).length) {
-      debugLog("Resolved tab context", {
-        strategy: "canonical-dnd5e-tabs",
-        navGroup: "primary",
-        matchedTabs: matchingCanonicalTabs.length
-      });
-      return { nav: canonicalNav, tabContainer: canonicalContainer, navGroup: "primary" };
-    }
-  }
-
-  const navCandidates = html.find("nav.tabs, nav.sheet-navigation.tabs, nav.sheet-tabs");
-  debugLog("Resolving tab context", {
-    navCandidates: navCandidates.length
-  });
-
-  for (const element of navCandidates) {
-    const nav = $(element);
-    if (!nav.length) continue;
-    
-    const tabLinks = nav.find("[data-tab]");
-    if (tabLinks.length < 2) {
-      debugLog("Skipping nav with < 2 tabs", { tabLinks: tabLinks.length });
-      continue;
-    }
-    
-    if (nav.find(`[data-tab='${TAB_KEY}']`).length) {
-      debugLog("Tab already present in navigation", {
-        strategy: "dom-nav-scan"
-      });
-      return null;
-    }
-
-    const navGroup = nav.data("group") || nav.find("[data-group]").first().data("group") || "primary";
-    debugLog("Found nav with group", { navGroup, tabLinkCount: tabLinks.length });
-    
-    const tabIds = new Set(
-      tabLinks
-        .map((_, link) => String(link.dataset.tab ?? "").trim())
-        .get()
-        .filter(Boolean)
-    );
-    if (tabIds.size < 2) {
-      debugLog("Skipping: < 2 tab ids in nav", { navGroup, tabIds: tabIds.size });
-      continue;
-    }
-
-    const groupTabs = html.find(`.tab[data-group='${navGroup}']`);
-    if (groupTabs.length < 2) {
-      debugLog("Skipping: < 2 tabs in group", { navGroup, groupTabs: groupTabs.length });
-      continue;
-    }
-
-    const parentCandidates = [];
-    groupTabs.each((_, tab) => {
-      const parent = tab.parentElement;
-      if (!parent) return;
-      if (!parentCandidates.includes(parent)) parentCandidates.push(parent);
+  if (!canonicalNav.length || !canonicalContainer.length) {
+    debugLog("Skipping tab context resolution", {
+      reason: "missing-canonical-region",
+      hasCanonicalNav: canonicalNav.length > 0,
+      hasCanonicalContainer: canonicalContainer.length > 0
     });
-
-    let tabContainer = null;
-    for (const parent of parentCandidates) {
-      const tabsInParent = Array.from(parent.querySelectorAll(`:scope > .tab[data-group='${navGroup}']`));
-      const matching = tabsInParent.filter((tab) => tabIds.has(String(tab.dataset.tab ?? "")));
-      if (matching.length >= 2) {
-        tabContainer = $(parent);
-        break;
-      }
-    }
-
-    if (tabContainer?.length === 1) {
-      debugLog("Resolved tab context", {
-        strategy: "dom-nav-scan",
-        navGroup,
-        containerClass: tabContainer.attr("class")
-      });
-      return { nav, tabContainer, navGroup };
-    }
-  }
-
-  const fallbackNav = html.find("nav.tabs[data-group='primary'], nav.sheet-navigation.tabs, nav.sheet-tabs").first();
-  if (!fallbackNav.length) {
-    debugLog("No fallback nav found");
-    return null;
-  }
-  if (fallbackNav.find(`[data-tab='${TAB_KEY}']`).length) {
-    debugLog("Tab already present in fallback nav");
     return null;
   }
 
-  const fallbackTabs = html.find(".tab[data-group='primary']");
-  if (fallbackTabs.length < 2) {
-    debugLog("No fallback primary tab set found", { count: fallbackTabs.length });
+  if (canonicalNav.find(`[data-tab='${TAB_KEY}']`).length) {
+    debugLog("Tab already present in canonical nav");
     return null;
   }
 
-  const fallbackTabContainer = fallbackTabs.first().parent().first();
-  if (fallbackTabContainer.length !== 1) {
-    debugLog("No fallback tab container found");
+  const navTabIds = new Set(
+    canonicalNav
+      .find("[data-tab]")
+      .map((_, link) => String(link.dataset.tab ?? "").trim())
+      .get()
+      .filter(Boolean)
+  );
+
+  const matchingCanonicalTabs = canonicalContainer
+    .children(".tab[data-group='primary']")
+    .filter((_, tab) => navTabIds.has(String(tab.dataset.tab ?? "")));
+
+  if (matchingCanonicalTabs.length < 2) {
+    debugLog("Skipping tab context resolution", {
+      reason: "insufficient-canonical-tabs",
+      matchedTabs: matchingCanonicalTabs.length
+    });
     return null;
   }
 
   debugLog("Resolved tab context", {
-    strategy: "fallback-primary",
+    strategy: "canonical-dnd5e-tabs",
     navGroup: "primary",
-    containerClass: fallbackTabContainer.attr("class")
+    matchedTabs: matchingCanonicalTabs.length,
+    navTag: canonicalNav.prop("tagName")?.toLowerCase?.() ?? null,
+    navId: canonicalNav.attr("id") ?? null,
+    navClasses: canonicalNav.attr("class") ?? null,
+    tabContainerTag: canonicalContainer.prop("tagName")?.toLowerCase?.() ?? null,
+    tabContainerId: canonicalContainer.attr("id") ?? null,
+    tabContainerClasses: canonicalContainer.attr("class") ?? null,
+    primaryChildTabCount: canonicalContainer.children(".tab[data-group='primary']").length
   });
-  return { nav: fallbackNav, tabContainer: fallbackTabContainer, navGroup: "primary" };
+  return { nav: canonicalNav, tabContainer: canonicalContainer, navGroup: "primary" };
 }
 
 function onRenderApplicationV1(app, html) {
-  if (!isSupportedCharacterSheet(app)) return;
+  if (!isSupportedCharacterSheet(app)) {
+    debugLog("Skipping renderApplicationV1: unsupported app", getAppDebugContext(app));
+    return;
+  }
+  debugLog("Accepted renderApplicationV1 for faction tab injection", getAppDebugContext(app));
   void onRenderActorSheet(app, html);
 }
 
 function onRenderApplicationV2(app, element) {
-  if (!isSupportedCharacterSheet(app)) return;
+  if (!isSupportedCharacterSheet(app)) {
+    debugLog("Skipping renderApplicationV2: unsupported app", getAppDebugContext(app));
+    return;
+  }
+  debugLog("Accepted renderApplicationV2 for faction tab injection", getAppDebugContext(app));
   const html = $(element);
   void onRenderActorSheet(app, html);
 }
 
-function removeInjectedFactionTab(html) {
-  html.find(`nav [data-tab='${TAB_KEY}']`).remove();
-  html.find(`.tab[data-tab='${TAB_KEY}']`).remove();
+function removeInjectedFactionTab(nav, tabContainer, navGroup) {
+  nav.find(`[data-tab='${TAB_KEY}']`).remove();
+  tabContainer.children(`.tab[data-group='${navGroup}'][data-tab='${TAB_KEY}']`).remove();
 }
 
 async function onRenderActorSheet(app, html) {
   try {
     const actor = getSheetActor(app);
-    if (!actor || actor.type !== "character") return;
-    if (!canViewFactionTab(actor)) return;
+    if (!actor || actor.type !== "character") {
+      debugLog("Skipping actor sheet render: not a character actor", getAppDebugContext(app));
+      return;
+    }
+    if (!canViewFactionTab(actor)) {
+      debugLog("Skipping actor sheet render: no tab visibility permission", {
+        ...getAppDebugContext(app),
+        isGM: game.user?.isGM === true,
+        isOwner: actor?.isOwner === true,
+        playerVisibilityEnabled: isPlayerVisibilityEnabled()
+      });
+      return;
+    }
 
     const renderNonce = (_latestRenderByApp.get(app) ?? 0) + 1;
     _latestRenderByApp.set(app, renderNonce);
-
-    // Ensure we never keep stale duplicate instances from previous render paths.
-    removeInjectedFactionTab(html);
 
     const context = resolveSheetTabContext(html);
     if (!context) {
       debugLog("Skipping tab injection", {
         reason: "no-tab-context",
-        actorId: actor.id,
-        sheetClass: app?.constructor?.name ?? "unknown"
+        ...getAppDebugContext(app)
       });
       return;
     }
@@ -439,7 +393,11 @@ async function onRenderActorSheet(app, html) {
     const { nav: contextNav, tabContainer: contextTabContainer, navGroup } = context;
     const nav = contextNav.first();
     const tabContainer = contextTabContainer.first();
-    const currentlyActiveTab = html.find(`nav[data-group='${navGroup}'] [data-tab].active`).first().data("tab");
+
+    // Ensure we never keep stale duplicate instances in our resolved region.
+    removeInjectedFactionTab(nav, tabContainer, navGroup);
+
+    const currentlyActiveTab = nav.find("[data-tab].active").first().data("tab");
     const preferredTab = _preferredTabByApp.get(app) || currentlyActiveTab || TAB_KEY;
 
     const allGroups = applyGroupUiState(getFactionGroups(actor), actor);
@@ -451,7 +409,8 @@ async function onRenderActorSheet(app, html) {
     };
 
     const tabAriaLabel = localize("tabAriaLabel", "Faction Status");
-    
+    nav.attr("data-fst-owned-nav", "true");
+
     nav.append(`<a class='item' data-group='${navGroup}' data-tab='${TAB_KEY}' title='${tabAriaLabel}' aria-label='${tabAriaLabel}'><i class='fa-solid fa-layer-group'></i></a>`);
 
     const tabHtml = await renderTemplate(`modules/${MODULE_ID}/templates/faction-status-tab.hbs`, {
@@ -543,7 +502,7 @@ function initializeTabSwitching(html, nav, tabContainer, navGroup, preferredTab 
         nav.find(`a[data-tab]`).removeClass("active");
         navItem.addClass("active");
         // Hide all tabs and show ours
-        tabContainer.find(`.tab[data-group="${navGroup}"]`).hide();
+        tabContainer.children(`.tab[data-group="${navGroup}"]`).hide();
         tabContent.show();
       });
     }

@@ -1,5 +1,5 @@
 /* Faction Status Tab Navigation Styling */
-a[data-tab="faction-status"] {
+nav[data-fst-owned-nav="true"] > a[data-tab="faction-status"] {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -9,7 +9,7 @@ a[data-tab="faction-status"] {
   padding: 0.25rem;
 }
 
-a[data-tab="faction-status"] i {
+nav[data-fst-owned-nav="true"] > a[data-tab="faction-status"] i {
   font-size: 1.2em;
 }
 
